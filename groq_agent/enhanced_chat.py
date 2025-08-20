@@ -71,7 +71,7 @@ class EnhancedChatSession:
         self.history = FileHistory(str(history_file))
         
         # Enhanced command completions
-        base_commands = ['/help', '/model', '/exit', '/clear', '/history', '/files', '/scan', '/read', '/workspace']
+        base_commands = ['/help', '/model', '/exit', '/clear', '/history', '/files', '/scan', '/read', '/workspace', '/clear-context']
         if not self.read_only:
             base_commands.append('/edit')
         self.command_completer = WordCompleter(base_commands)
@@ -151,6 +151,13 @@ class EnhancedChatSession:
                 response = self._send_enhanced_message(user_input)
                 if response:
                     self._display_enhanced_response(response)
+                else:
+                    # If no response was received, show a helpful message
+                    self.console.print("[yellow]No response received. This could be due to:[/yellow]")
+                    self.console.print("[yellow]• Network connectivity issues[/yellow]")
+                    self.console.print("[yellow]• API rate limits[/yellow]")
+                    self.console.print("[yellow]• Context length limits[/yellow]")
+                    self.console.print("[yellow]Try asking a shorter question or use /clear to reset the conversation.[/yellow]")
                 
             except KeyboardInterrupt:
                 self.console.print("\n[yellow]Use /exit to quit the chat session[/yellow]")
@@ -206,6 +213,7 @@ class EnhancedChatSession:
             ("/files", "List accessible files"),
             ("/scan", "Rescan workspace for files"),
             ("/read <file>", "Read and analyze a file"),
+            ("/clear-context", "Clear file context"),
             ("/workspace", "Show workspace information"),
             ("/clear", "Clear chat history"),
             ("/exit", "Exit the chat session")
@@ -300,6 +308,8 @@ class EnhancedChatSession:
                 self.console.print("[yellow]Edit is disabled in Q&A (read-only) mode[/yellow]")
             else:
                 self._edit_file(args)
+        elif cmd == '/clear-context':
+            self._clear_file_context()
         elif cmd == '/agent' or (cmd == '/mode' and args.strip().lower() == 'agent'):
             # Switch to Agent mode
             self._switch_to_mode = 'agent'
@@ -480,14 +490,18 @@ class EnhancedChatSession:
         context_parts.append(f"Workspace: {self.workspace_path}")
         context_parts.append(f"Accessible files: {len(self.accessible_files)}")
         
-        # Add current file context if available
+        # Add current file context if available (increased content size)
         if self.current_file_context:
             context_parts.append(f"Current file: {self.current_file_context['path']}")
-            context_parts.append(f"File content:\n{self.current_file_context['content']}")
+            # Include more file content (increased from 2000 to 8000 characters)
+            file_content = self.current_file_context['content']
+            if len(file_content) > 8000:
+                file_content = file_content[:8000] + "\n... (content truncated for context)"
+            context_parts.append(f"File content:\n{file_content}")
         
-        # Add accessible files list for reference
+        # Add accessible files list for reference (increased from 5 to 15 files)
         if self.accessible_files:
-            files_list = "\n".join(sorted(self.accessible_files)[:10])  # Limit to first 10
+            files_list = "\n".join(sorted(self.accessible_files)[:15])  # Limit to first 15
             context_parts.append(f"Available files:\n{files_list}")
         
         # Create enhanced message
@@ -505,24 +519,66 @@ If they ask to read or modify a file, you can use the /read or /edit commands.
         # Replace the last user message with enhanced version
         self.messages[-1] = {"role": "user", "content": enhanced_message}
         
-        # Trim history if needed
+        # Trim history if needed (less aggressive trimming)
         if len(self.messages) > self.max_history * 2:
+            # Keep more messages for better context
             self.messages = self.messages[-self.max_history * 2:]
         
         # Show typing indicator
         with Status("[bold green]🤔 Thinking...[/bold green]", console=self.console):
             try:
+                # First attempt with full context
                 response = self.api_client.chat_completion(
                     messages=self.messages,
                     model=self.current_model,
-                    temperature=0.7
+                    temperature=0.7,
+                    max_tokens=4000
                 )
+                
+                # Validate response
+                if not response or not response.choices or not response.choices[0].message:
+                    self.console.print("[red]Error: Received empty response from API[/red]")
+                    if self.messages:
+                        self.messages.pop()
+                    return None
+                
                 response_content = response.choices[0].message.content
+                
+                # Check if response content is empty
+                if not response_content or not response_content.strip():
+                    # Try fallback with simplified context
+                    self.console.print("[yellow]Trying with simplified context...[/yellow]")
+                    simplified_messages = [
+                        {"role": "system", "content": "You are a helpful AI assistant. Answer the user's question based on the available context."},
+                        {"role": "user", "content": user_input}
+                    ]
+                    
+                    fallback_response = self.api_client.chat_completion(
+                        messages=simplified_messages,
+                        model=self.current_model,
+                        temperature=0.7,
+                        max_tokens=4000
+                    )
+                    
+                    if fallback_response and fallback_response.choices and fallback_response.choices[0].message:
+                        fallback_content = fallback_response.choices[0].message.content
+                        if fallback_content and fallback_content.strip():
+                            # Add assistant response to history
+                            self.messages.append({"role": "assistant", "content": fallback_content})
+                            return fallback_content
+                    
+                    self.console.print("[red]Error: Received empty response content from API[/red]")
+                    if self.messages:
+                        self.messages.pop()
+                    return None
+                
                 # Add assistant response to history
                 self.messages.append({"role": "assistant", "content": response_content})
                 return response_content
+                
             except Exception as e:
                 self.console.print(f"[red]Error getting response: {e}[/red]")
+                self.console.print("[yellow]This might be due to network issues, API limits, or context length. Try asking a shorter question or use /clear to reset the conversation.[/yellow]")
                 # Remove the user message from history since it failed
                 if self.messages:
                     self.messages.pop()
@@ -619,6 +675,11 @@ If they ask to read or modify a file, you can use the /read or /edit commands.
         else:
             self.console.print("[yellow]Operation cancelled[/yellow]")
     
+    def _clear_file_context(self) -> None:
+        """Clear the current file context to reduce memory usage."""
+        self.current_file_context = None
+        self.console.print("[green]File context cleared[/green]")
+    
     def _show_enhanced_help(self) -> None:
         """Show enhanced help information."""
         help_text = """
@@ -629,6 +690,7 @@ If they ask to read or modify a file, you can use the /read or /edit commands.
 • /scan - Rescan workspace for new files
 • /read <file> - Read and analyze a specific file
 • /edit <file> - Edit a file with AI assistance
+• /clear-context - Clear current file context
 
 [cyan]Chat & Model:[/cyan]
 • /model - Change the AI model (interactive selection)
@@ -651,6 +713,7 @@ If they ask to read or modify a file, you can use the /read or /edit commands.
 • Just ask me to read, analyze, or modify any file
 • Use /read <filename> to focus on a specific file
 • I can suggest improvements and apply them directly
+• Use /clear-context if responses become slow or unreliable
         """
         
         panel = Panel(

@@ -50,7 +50,7 @@ class ConfigurationManager:
             "default_model": "llama-2-70B",
             "interactive_mode": True,
             "theme": "default",
-            "max_history": 100,
+            "max_history": 200,
             "auto_save": True,
             "codeflow_first_run": True
         }
