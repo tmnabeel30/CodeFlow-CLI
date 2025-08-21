@@ -626,7 +626,9 @@ Please respond intelligently to the user's request, using your tools when approp
         """Check if user input is requesting file modifications."""
         modification_keywords = [
             'add', 'create', 'modify', 'change', 'update', 'edit', 'fix', 'implement',
-            'button', 'function', 'component', 'page', 'file', 'code', 'feature'
+            'make', 'build', 'generate',
+            'button', 'function', 'component', 'page', 'file', 'code', 'feature',
+            'website', 'app'
         ]
         
         user_lower = user_input.lower()
@@ -642,11 +644,28 @@ Please respond intelligently to the user's request, using your tools when approp
             relevant_files = self._find_relevant_files(user_input)
             
             if not relevant_files:
-                return "I couldn't find any relevant files for your request. Please specify the file path or provide more context about what you'd like to modify."
-            
+                new_path = Prompt.ask(
+                    "No relevant file found. Enter path for new file", default="index.html"
+                )
+                success = self.file_ops.create_file_from_prompt(
+                    new_path,
+                    self.current_model,
+                    user_input,
+                )
+                if success:
+                    self.recent_changes.append(
+                        {
+                            'file': new_path,
+                            'timestamp': time.time(),
+                            'action': 'created',
+                        }
+                    )
+                    return f"✅ Created new file: {new_path}"
+                return "❌ Failed to create the requested file"
+
             # For now, let's try the first relevant file
             target_file = relevant_files[0]
-            
+
             # Use file operations to handle the modification
             success = self.file_ops.review_file(
                 target_file,
@@ -654,7 +673,7 @@ Please respond intelligently to the user's request, using your tools when approp
                 user_input,
                 auto_apply=False
             )
-            
+
             if success:
                 self.recent_changes.append({
                     'file': target_file,
