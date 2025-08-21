@@ -71,7 +71,11 @@ class EnhancedChatSession:
         self.history = FileHistory(str(history_file))
         
         # Enhanced command completions
-        base_commands = ['/help', '/model', '/exit', '/clear', '/history', '/files', '/scan', '/read', '/workspace', '/clear-context']
+        base_commands = [
+            '/help', '/model', '/exit', '/clear', '/history', '/files', '/scan', '/read', '/workspace', '/clear-context',
+            '/fast', '/balanced', '/powerful', '/ultra', '/mixtral', '/gemma', '/compound', '/compound-mini',
+            '/next', '/prev', '/shortcuts'
+        ]
         if not self.read_only:
             base_commands.append('/edit')
         self.command_completer = WordCompleter(base_commands)
@@ -210,6 +214,9 @@ class EnhancedChatSession:
         commands = [
             ("/help", "Show this help message"),
             ("/model", "Change the AI model"),
+            ("/fast", "Switch to fast model"),
+            ("/powerful", "Switch to powerful model"),
+            ("/next/prev", "Cycle through models"),
             ("/files", "List accessible files"),
             ("/scan", "Rescan workspace for files"),
             ("/read <file>", "Read and analyze a file"),
@@ -232,12 +239,14 @@ class EnhancedChatSession:
         )
         
         # Tips
-        tips = """
+        tips = f"""
 [bold]💡 Tips:[/bold]
 • I can automatically see all files in your workspace
 • Just ask me to read, analyze, or modify any file
 • Use /read <filename> to focus on a specific file
 • I can suggest improvements and apply them directly
+• Quick model switch: /fast, /balanced, /powerful, /ultra
+• Current model: {self.current_model or 'Not set'}
         """.strip()
         
         tips_panel = Panel(
@@ -297,6 +306,30 @@ class EnhancedChatSession:
             self._show_enhanced_help()
         elif cmd == '/model':
             self._change_model()
+        elif cmd == '/shortcuts':
+            self.model_selector.show_quick_shortcuts()
+        elif cmd in ['/fast', '/balanced', '/powerful', '/ultra', '/mixtral', '/gemma', '/compound', '/compound-mini']:
+            shortcut = cmd[1:]  # Remove the leading '/'
+            new_model = self.model_selector.quick_switch_model(shortcut)
+            if new_model:
+                self.current_model = new_model
+                self.config.set_default_model(new_model)
+        elif cmd == '/next':
+            next_model = self.model_selector.get_next_model(self.current_model)
+            if next_model:
+                self.current_model = next_model
+                self.config.set_default_model(next_model)
+                self.console.print(f"[green]Switched to next model: {next_model}[/green]")
+            else:
+                self.console.print("[red]Could not switch to next model[/red]")
+        elif cmd == '/prev':
+            prev_model = self.model_selector.get_previous_model(self.current_model)
+            if prev_model:
+                self.current_model = prev_model
+                self.config.set_default_model(prev_model)
+                self.console.print(f"[green]Switched to previous model: {prev_model}[/green]")
+            else:
+                self.console.print("[red]Could not switch to previous model[/red]")
         elif cmd == '/files':
             self._list_accessible_files()
         elif cmd == '/scan':
@@ -694,6 +727,9 @@ If they ask to read or modify a file, you can use the /read or /edit commands.
 
 [cyan]Chat & Model:[/cyan]
 • /model - Change the AI model (interactive selection)
+• /fast, /balanced, /powerful, /ultra - Quick model switches
+• /next, /prev - Cycle through models
+• /shortcuts - Show all quick model shortcuts
 • /clear - Clear the current chat history
 • /workspace - Show workspace information
 

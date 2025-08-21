@@ -1,5 +1,5 @@
 """Groq CLI Agent - Interactive command-line interface for Groq API."""
 
-__version__ = "0.1.2"
+__version__ = "0.1.3"
 __author__ = "tmnabeel30"
-__description__ = "Interactive CLI agent for Groq API with chat, model selection, and file diff capabilities"
+__description__ = "Advanced AI coding assistant with enhanced capabilities, semantic search, and intelligent code operations"

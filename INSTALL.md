@@ -1,9 +1,12 @@
-# Installation Guide
+# CodeFlow CLI - Installation Guide
+
+**Cursor AI-style agentic capabilities for your terminal** 🚀
 
 ## Prerequisites
 
 - Python 3.8 or higher
 - A Groq API key (get one at https://console.groq.com/)
+- Terminal with color support (most modern terminals)
 
 ## Installation Methods
 
@@ -69,24 +72,40 @@ codeflow --select-model
 codeflow --model llama-2-70B
 ```
 
-## Quick Start
+## 🚀 Quick Start
 
-### 1. Start interactive chat (default behavior)
+### 1. Start CodeFlow (Interactive Mode Selection)
 ```bash
 codeflow
 ```
+You'll see three modes:
+- **Q&A Mode** (1) - Read-only codebase questions
+- **Agent Mode** (2) - File modifications with confirmation
+- **Agentic Mode** (3) - Advanced Cursor AI-style capabilities
 
-### 2. Send a single message
+### 2. Try Agentic Mode (Recommended)
+```bash
+codeflow
+# Select: 3 (Agentic Mode)
+
+# Try these commands:
+/search "authentication logic"     # Semantic search
+/analyze src/main.py              # Code analysis
+/status                           # System status
+/tools                           # Show all tools
+```
+
+### 3. Send a single message (Legacy)
 ```bash
 codeflow chat "Hello, how can you help me?"
 ```
 
-### 3. Review a file
+### 4. Review a file (Legacy)
 ```bash
 codeflow review myfile.py
 ```
 
-### 4. List available models
+### 5. List available models
 ```bash
 codeflow models
 ```
@@ -158,17 +177,36 @@ The CLI stores configuration in:
 
 You can customize the location using the `--config-dir` option.
 
-## Next Steps
+## 🎯 Next Steps
 
-1. Read the [README.md](README.md) for detailed usage instructions
-2. Try the interactive chat: `codeflow`
-3. Review some code: `codeflow review yourfile.py`
-4. Explore available models: `codeflow models`
+1. **Read the [README.md](README.md)** for detailed usage instructions and examples
+2. **Try Agentic Mode**: `codeflow` → Select mode 3 for advanced capabilities
+3. **Explore semantic search**: Use `/search "your query"` to find code by meaning
+4. **Analyze your code**: Use `/analyze filename.py` for structure insights
+5. **Check system status**: Use `/status` to see workspace information
+6. **Learn all commands**: Use `/help` in any mode for available commands
 
-## Support
+## 🚀 Agentic Mode Features
+
+The new **Agentic Mode** brings Cursor AI-style capabilities:
+
+- **Semantic Search**: Find code by meaning, not just text
+- **Code Analysis**: Structure, complexity, and quality metrics
+- **Context Awareness**: AI understands your project structure
+- **Tool Orchestration**: Coordinate multiple operations intelligently
+- **Change Tracking**: Monitor all modifications with history
+- **Enhanced UI**: Rich terminal interface with panels and tables
+
+## 📞 Support
 
 If you encounter any issues:
-1. Check the troubleshooting section above
-2. Run `codeflow --help` for command options
-3. Check the logs in `~/.groq/` directory
-4. Open an issue on the project repository
+1. **Check troubleshooting**: Review the troubleshooting section above
+2. **Use help commands**: Run `codeflow --help` or `/help` in any mode
+3. **Check logs**: Look in `~/.groq/` directory for detailed logs
+4. **Model selection issues**: Try using arrow keys, Tab, or Enter in model selector
+5. **Agentic mode problems**: Ensure you have the latest version
+6. **Report issues**: Open an issue on the project repository
+
+---
+
+**CodeFlow CLI** - Created by **TM NABEEL @tmnabeel30** 🚀

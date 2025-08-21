@@ -283,10 +283,29 @@ def start_interactive_chat(config: ConfigurationManager, api_client: GroqAPIClie
     except Exception:
         pass
     
-    # Choose mode: Q&A (read-only) or Agent (modify files)
+    # Choose mode: Q&A (read-only), Agent (modify files), or Agentic (advanced)
     try:
         from rich.prompt import Prompt
-        mode = Prompt.ask("Select mode", choices=["qna", "agent"], default="qna")
+        console.print("\n[bold cyan]Select your mode:[/bold cyan]")
+        console.print("1. [green]Q&A Mode[/green] - Ask questions about your codebase (read-only)")
+        console.print("2. [blue]Agent Mode[/blue] - AI agent that can modify files")
+        console.print("3. [magenta]Advanced Agent[/magenta] - Enhanced AI with smart tools and analysis")
+        
+        choice = Prompt.ask(
+            "\nSelect mode",
+            choices=["1", "2", "3"],
+            default="1"
+        )
+        
+        # Map choice to mode
+        if choice == "1":
+            mode = "qna"
+        elif choice == "2":
+            mode = "agent"
+        elif choice == "3":
+            mode = "agentic"
+        else:
+            mode = "qna"
     except Exception:
         mode = "qna"
 
@@ -298,15 +317,41 @@ def start_interactive_chat(config: ConfigurationManager, api_client: GroqAPIClie
             if switch == 'agent':
                 mode = 'agent'
                 continue
+            elif switch == 'agentic':
+                mode = 'agentic'
+                continue
             break
-        else:
+        elif mode == "agent":
             # Start intelligent agent mode (can modify files)
             agent = IntelligentAgent(config, api_client)
             switch = agent.start_interactive_mode()
             if switch == 'qna':
                 mode = 'qna'
                 continue
+            elif switch == 'agentic':
+                mode = 'agentic'
+                continue
             break
+        elif mode == "agentic":
+            # Start advanced agent mode
+            try:
+                from .agentic_chat import AgenticChat
+                agentic_chat = AgenticChat(config, api_client)
+                switch = agentic_chat.start()
+                if switch == 'qna':
+                    mode = 'qna'
+                    continue
+                elif switch == 'agent':
+                    mode = 'agent'
+                    continue
+                break
+            except ImportError:
+                console.print("[red]Advanced Agent mode not available. Falling back to Agent mode.[/red]")
+                mode = 'agent'
+                continue
+        else:
+            mode = "qna"
+            continue
 
 
 def send_single_message(api_client: GroqAPIClient, model: str, prompt: str, 
