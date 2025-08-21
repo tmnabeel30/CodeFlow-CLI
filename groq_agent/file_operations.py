@@ -376,6 +376,55 @@ Provide a general analysis covering:
         except Exception as e:
             self.console.print(f"[red]Error reviewing file: {e}[/red]")
             return False
+
+    def review_files(
+        self,
+        file_paths: List[str],
+        model: str,
+        prompt: Optional[str] = None,
+        auto_apply: bool = False,
+    ) -> Dict[str, bool]:
+        """Review and suggest improvements for multiple files with context.
+
+        Args:
+            file_paths: List of file paths to review
+            model: Model to use for suggestions
+            prompt: Optional custom prompt for the review
+            auto_apply: Whether to skip user confirmation
+
+        Returns:
+            Dictionary mapping file paths to success status
+        """
+        results: Dict[str, bool] = {}
+
+        # Read contents of all files first for cross-file context
+        file_contents: Dict[str, str] = {}
+        for path in file_paths:
+            if not os.path.exists(path):
+                self.console.print(f"[red]File not found: {path}[/red]")
+                results[path] = False
+                continue
+            with open(path, "r") as f:
+                file_contents[path] = f.read()
+
+        for path in file_paths:
+            if path not in file_contents:
+                continue
+
+            # Build context from other files
+            other_context = "".join(
+                f"\n\nFile: {p}\n{file_contents[p]}" for p in file_paths if p != path and p in file_contents
+            )
+            contextual_prompt = prompt or "Review and modify the file as requested."
+            if other_context:
+                contextual_prompt = (
+                    f"{contextual_prompt}\n\nConsider the following related files for context:{other_context}"
+                )
+
+            success = self.review_file(path, model, contextual_prompt, auto_apply)
+            results[path] = success
+
+        return results
     
     def _generate_review_prompt(self, file_path: str, file_content: str, file_info: Dict[str, Any]) -> str:
         """Generate a review prompt based on file type and content.

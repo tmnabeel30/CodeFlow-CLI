@@ -226,7 +226,7 @@ class EnhancedChatSession:
             ("/exit", "Exit the chat session")
         ]
         if not self.read_only:
-            commands.insert(5, ("/edit <file>", "Edit a file with AI assistance"))
+            commands.insert(5, ("/edit <file1> [file2 ...]", "Edit one or more files with AI assistance"))
         
         for cmd, desc in commands:
             commands_table.add_row(cmd, desc)
@@ -340,7 +340,7 @@ class EnhancedChatSession:
             if self.read_only:
                 self.console.print("[yellow]Edit is disabled in Q&A (read-only) mode[/yellow]")
             else:
-                self._edit_file(args)
+                self._edit_files(args)
         elif cmd == '/clear-context':
             self._clear_file_context()
         elif cmd == '/agent' or (cmd == '/mode' and args.strip().lower() == 'agent'):
@@ -444,47 +444,51 @@ class EnhancedChatSession:
         except Exception as e:
             self.console.print(f"[red]Error reading file: {e}[/red]")
     
-    def _edit_file(self, file_path: str) -> None:
-        """Edit a file with AI assistance."""
+    def _edit_files(self, file_paths: str) -> None:
+        """Edit one or more files with AI assistance."""
         if self.read_only:
             self.console.print("[yellow]Edit is disabled in Q&A (read-only) mode[/yellow]")
             return
-        if not file_path:
-            self.console.print("[red]Please specify a file path[/red]")
-            self.console.print("Usage: /edit <file_path>")
+
+        if not file_paths:
+            self.console.print("[red]Please specify one or more file paths[/red]")
+            self.console.print("Usage: /edit <file1> [file2 ...]")
             return
-        
-        # Try to find the file
-        target_file = None
-        for accessible_file in self.accessible_files:
-            if file_path in accessible_file or Path(accessible_file).name == file_path:
-                target_file = accessible_file
-                break
-        
-        if not target_file:
-            self.console.print(f"[red]File not found: {file_path}[/red]")
-            self.console.print("Use /files to see available files")
+
+        requested = file_paths.split()
+        targets: List[str] = []
+        for req in requested:
+            target = None
+            for accessible_file in self.accessible_files:
+                if req in accessible_file or Path(accessible_file).name == req:
+                    target = accessible_file
+                    break
+            if target:
+                targets.append(target)
+            else:
+                self.console.print(f"[red]File not found: {req}[/red]")
+
+        if not targets:
+            self.console.print("[red]No valid files found[/red]")
             return
-        
-        # Get edit prompt from user
-        edit_prompt = Prompt.ask("What changes would you like to make to this file?")
-        
+
+        edit_prompt = Prompt.ask("What changes would you like to make to these files?")
         if not edit_prompt:
             self.console.print("[yellow]Edit cancelled[/yellow]")
             return
-        
-        # Perform the edit
-        success = self.file_ops.review_file(
-            target_file, 
-            self.current_model, 
-            edit_prompt, 
-            auto_apply=False
+
+        results = self.file_ops.review_files(
+            targets,
+            self.current_model,
+            edit_prompt,
+            auto_apply=False,
         )
-        
-        if success:
-            self.console.print(f"[green]✓ File edited successfully: {target_file}[/green]")
-        else:
-            self.console.print(f"[red]✗ Failed to edit file: {target_file}[/red]")
+
+        for path, success in results.items():
+            if success:
+                self.console.print(f"[green]✓ File edited successfully: {path}[/green]")
+            else:
+                self.console.print(f"[red]✗ Failed to edit file: {path}[/red]")
     
     def _show_workspace_info(self) -> None:
         """Show workspace information."""
@@ -722,7 +726,7 @@ If they ask to read or modify a file, you can use the /read or /edit commands.
 • /files - List all accessible files in workspace
 • /scan - Rescan workspace for new files
 • /read <file> - Read and analyze a specific file
-• /edit <file> - Edit a file with AI assistance
+• /edit <file1> [file2 ...] - Edit one or more files with AI assistance
 • /clear-context - Clear current file context
 
 [cyan]Chat & Model:[/cyan]

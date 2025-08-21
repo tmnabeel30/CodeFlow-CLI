@@ -69,13 +69,13 @@ codeflow --api-key "your-groq-api-key"
 - `/workspace` - Show workspace information
 
 ### Agent Mode Commands
-- `/edit <file>` - Propose/apply edits with diff preview and confirmation
+- `/edit <file1> [file2 ...]` - Propose/apply edits with diff preview and confirmation across multiple files
 
 ### 🚀 Advanced Agent Commands
 - `/search <query>` - Semantic codebase search by meaning
 - `/analyze <file>` - Analyze code structure, complexity, and quality
 - `/read <file>` - Read file with enhanced analysis
-- `/edit <file>` - Intelligent file editing with AI assistance
+- `/edit <file1> [file2 ...]` - Intelligent multi-file editing with AI assistance
 - `/status` - Show comprehensive system status
 - `/tools` - Display all available agentic tools
 - `/context` - Show current workspace context
@@ -108,7 +108,8 @@ AI: The CLI entry point is defined in `groq_agent/cli.py`...
 /agent
 
 # Propose edits with diff preview
-/edit groq_agent/enhanced_chat.py
+# Edit multiple files with shared context
+/edit groq_agent/enhanced_chat.py groq_agent/agentic_chat.py
 What changes? Improve the prompt styling and add a bottom toolbar.
 # Shows diff, asks for confirmation before applying
 ```
@@ -132,8 +133,8 @@ codeflow
 # Shows workspace info, recent changes, tool usage
 
 # Intelligent file editing
-/edit src/main.py
-What changes? Add error handling for API calls
+/edit src/main.py tests/test_main.py
+What changes? Add error handling for API calls and update tests accordingly
 # AI understands context and proposes intelligent changes
 ```
 
