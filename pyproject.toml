@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "codeflow-cli"
-version = "0.1.3"
+version="0.1.5"
 description = "Advanced AI coding assistant with Cursor AI-style agentic capabilities, semantic search, and intelligent code operations"
 authors = [{name = "TM NABEEL", email = "tmnabeel30@example.com"}]
 readme = "README.md"
