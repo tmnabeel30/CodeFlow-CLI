@@ -19,7 +19,7 @@ class TestConfigurationManager:
             assert config.get("default_model") == "llama-2-70B"
             assert config.get("interactive_mode") is True
             assert config.get("theme") == "default"
-            assert config.get("max_history") == 100
+            assert config.get("max_history") == 200
             assert config.get("auto_save") is True
     
     def test_set_and_get(self):

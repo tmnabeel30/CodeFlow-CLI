@@ -358,45 +358,53 @@ class AgenticChat:
         }
         return language_map.get(ext, 'text')
     
-    def _handle_edit(self, file_path: str) -> None:
-        """Handle edit command with diff preview."""
-        if not file_path:
-            self.console.print("[red]Please specify a file path[/red]")
+    def _handle_edit(self, file_paths: str) -> None:
+        """Handle edit command for one or more files with diff preview."""
+        if not file_paths:
+            self.console.print("[red]Please specify one or more file paths[/red]")
             return
-        
-        # Find the file
-        target_file = None
-        for accessible_file in self.accessible_files:
-            if file_path in accessible_file or Path(accessible_file).name == file_path:
-                target_file = accessible_file
-                break
-        
-        if not target_file:
-            self.console.print(f"[red]File not found: {file_path}[/red]")
+
+        requested = file_paths.split()
+        targets: List[str] = []
+        for req in requested:
+            target = None
+            for accessible_file in self.accessible_files:
+                if req in accessible_file or Path(accessible_file).name == req:
+                    target = accessible_file
+                    break
+            if target:
+                targets.append(target)
+            else:
+                self.console.print(f"[red]File not found: {req}[/red]")
+
+        if not targets:
+            self.console.print("[red]No valid files found[/red]")
             return
-        
+
         instructions = Prompt.ask("What changes would you like to make?")
         if not instructions:
             self.console.print("[yellow]Edit cancelled[/yellow]")
             return
-        
-        # Use file operations for editing with diff preview
-        success = self.file_ops.review_file(
-            target_file, 
-            self.current_model, 
-            instructions, 
-            auto_apply=False
+
+        results = self.file_ops.review_files(
+            targets,
+            self.current_model,
+            instructions,
+            auto_apply=False,
         )
-        
-        if success:
-            self.console.print(f"[green]✓ File edited successfully: {target_file}[/green]")
-            self.recent_changes.append({
-                'file': target_file,
-                'timestamp': time.time(),
-                'action': 'edited'
-            })
-        else:
-            self.console.print(f"[red]✗ Failed to edit file: {target_file}[/red]")
+
+        for target_file, success in results.items():
+            if success:
+                self.console.print(f"[green]✓ File edited successfully: {target_file}[/green]")
+                self.recent_changes.append(
+                    {
+                        "file": target_file,
+                        "timestamp": time.time(),
+                        "action": "edited",
+                    }
+                )
+            else:
+                self.console.print(f"[red]✗ Failed to edit file: {target_file}[/red]")
     
     def _handle_analyze(self, file_path: str) -> None:
         """Handle analyze command."""
@@ -482,7 +490,7 @@ class AgenticChat:
 • /read <file> - Read file contents
 
 [cyan]File Operations:[/cyan]
-• /edit <file> - Edit file with intelligent changes
+• /edit <file1> [file2 ...] - Edit one or more files with intelligent changes
 
 [cyan]Context & History:[/cyan]
 • /context - Show current context
@@ -760,7 +768,7 @@ Please respond intelligently to the user's request, using your tools when approp
 • /read <file> - Read file contents
 
 [cyan]File Operations:[/cyan]
-• /edit <file> - Edit file with diff preview
+• /edit <file1> [file2 ...] - Edit files with diff preview
 • Natural language requests - "add button to task page"
 
 [cyan]Context & History:[/cyan]

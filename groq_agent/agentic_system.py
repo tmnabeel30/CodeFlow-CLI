@@ -640,7 +640,7 @@ class AgenticSystem:
 • /read <file> [start:end] - Read file contents
 
 [cyan]File Operations:[/cyan]
-• /edit <file> - Edit file with intelligent changes
+• /edit <file1> [file2 ...] - Edit files with intelligent changes
 • /create <file> - Create new file
 • /delete <file> - Delete file (with backup)
 
