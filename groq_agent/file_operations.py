@@ -2,6 +2,8 @@
 
 import os
 import stat
+import tempfile
+import subprocess
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 from rich.console import Console
@@ -660,6 +662,268 @@ Return the improved code with all enhancements applied.
         except Exception as e:
             self.console.print(f"[red]Error creating file: {e}[/red]")
             return False
+
+    def create_multiple_files_from_prompt(
+        self,
+        file_specs: List[Dict[str, str]],
+        model: str,
+        auto_apply: bool = False
+    ) -> Dict[str, bool]:
+        """Create multiple files based on specifications.
+        
+        Args:
+            file_specs: List of file specifications with 'path' and 'prompt' keys
+            model: Model to use for generation
+            auto_apply: Whether to skip user confirmation
+            
+        Returns:
+            Dictionary mapping file paths to success status
+        """
+        results: Dict[str, bool] = {}
+        
+        # Generate content for all files first
+        file_contents: Dict[str, str] = {}
+        
+        for spec in file_specs:
+            file_path = spec['path']
+            prompt = spec['prompt']
+            
+            # Check if file already exists
+            if os.path.exists(file_path):
+                if not Prompt.ask(f"File {file_path} already exists. Overwrite?", default=False):
+                    results[file_path] = False
+                    continue
+            
+            # Generate file content
+            self.console.print(f"\n[bold]Generating file: {file_path}[/bold]")
+            
+            # Enhance prompt with file type information
+            enhanced_prompt = self._enhance_file_creation_prompt(prompt, file_path)
+            
+            content = self.api_client.generate_code_suggestions(
+                file_content="",  # Empty for new file
+                prompt=enhanced_prompt,
+                model=model,
+                temperature=0.7
+            )
+            
+            if not content:
+                self.console.print(f"[red]Failed to generate content for {file_path}[/red]")
+                results[file_path] = False
+                continue
+            
+            file_contents[file_path] = content
+        
+        if not file_contents:
+            self.console.print("[red]No files to create[/red]")
+            return results
+        
+        # Show preview of all files
+        self._show_multiple_files_preview(file_contents)
+        
+        # Get user confirmation
+        if not auto_apply:
+            choice = self._prompt_multiple_files_action()
+            
+            if choice == "accept":
+                # Create all files
+                for file_path, content in file_contents.items():
+                    try:
+                        # Ensure directory exists
+                        Path(file_path).parent.mkdir(parents=True, exist_ok=True)
+                        
+                        # Write file
+                        with open(file_path, 'w') as f:
+                            f.write(content)
+                        
+                        self.console.print(f"[green]✓ File created: {file_path}[/green]")
+                        results[file_path] = True
+                    except Exception as e:
+                        self.console.print(f"[red]✗ Error creating {file_path}: {e}[/red]")
+                        results[file_path] = False
+            elif choice == "edit":
+                # Allow editing of each file
+                for file_path, content in file_contents.items():
+                    edited_content = self._edit_file_content(file_path, content)
+                    if edited_content is not None:
+                        try:
+                            # Ensure directory exists
+                            Path(file_path).parent.mkdir(parents=True, exist_ok=True)
+                            
+                            # Write file
+                            with open(file_path, 'w') as f:
+                                f.write(edited_content)
+                            
+                            self.console.print(f"[green]✓ File created: {file_path}[/green]")
+                            results[file_path] = True
+                        except Exception as e:
+                            self.console.print(f"[red]✗ Error creating {file_path}: {e}[/red]")
+                            results[file_path] = False
+                    else:
+                        results[file_path] = False
+            else:  # cancel
+                self.console.print("[yellow]File creation cancelled[/yellow]")
+                for file_path in file_contents:
+                    results[file_path] = False
+        else:
+            # Auto-apply: create all files without confirmation
+            for file_path, content in file_contents.items():
+                try:
+                    # Ensure directory exists
+                    Path(file_path).parent.mkdir(parents=True, exist_ok=True)
+                    
+                    # Write file
+                    with open(file_path, 'w') as f:
+                        f.write(content)
+                    
+                    self.console.print(f"[green]✓ File created: {file_path}[/green]")
+                    results[file_path] = True
+                except Exception as e:
+                    self.console.print(f"[red]✗ Error creating {file_path}: {e}[/red]")
+                    results[file_path] = False
+        
+        return results
+
+    def _show_multiple_files_preview(self, file_contents: Dict[str, str]) -> None:
+        """Show preview of multiple files to be created.
+        
+        Args:
+            file_contents: Dictionary mapping file paths to content
+        """
+        self.console.print(f"\n[bold cyan]📁 Project Structure - {len(file_contents)} files to be created:[/bold cyan]")
+        
+        # Show file structure overview
+        structure_table = Table(title="📋 File Structure", show_header=True, header_style="bold magenta")
+        structure_table.add_column("#", style="dim", width=4)
+        structure_table.add_column("File Path", style="cyan")
+        structure_table.add_column("Type", style="green")
+        structure_table.add_column("Size", style="yellow")
+        
+        for i, (file_path, content) in enumerate(file_contents.items(), 1):
+            path = Path(file_path)
+            file_type = path.suffix or "No extension"
+            size = len(content)
+            size_str = f"{size} chars"
+            
+            structure_table.add_row(str(i), str(path), file_type, size_str)
+        
+        self.console.print(structure_table)
+        
+        # Show detailed content for each file
+        self.console.print(f"\n[bold cyan]📄 File Contents:[/bold cyan]")
+        
+        for i, (file_path, content) in enumerate(file_contents.items(), 1):
+            self.console.print(f"\n[bold yellow]{i}. {file_path}[/bold yellow]")
+            self.diff_manager.show_file_preview(file_path, content, f"Generated File {i}")
+            
+            # Add separator between files
+            if i < len(file_contents):
+                self.console.print("\n" + "─" * 80 + "\n")
+
+    def _prompt_multiple_files_action(self) -> str:
+        """Prompt user for action after showing multiple files preview.
+        
+        Returns:
+            User's choice: 'accept', 'edit', or 'cancel'
+        """
+        self.console.print("\n[bold]What would you like to do?[/bold]")
+        
+        table = Table(show_header=False, box=None)
+        table.add_column("Option", style="cyan")
+        table.add_column("Description")
+        
+        table.add_row("A", "Accept all changes and create files")
+        table.add_row("E", "Edit the suggested changes")
+        table.add_row("C", "Cancel (no files created)")
+        
+        self.console.print(table)
+        
+        while True:
+            choice = Prompt.ask(
+                "Choose an option",
+                choices=["A", "E", "C"],
+                default="C"
+            )
+            
+            if choice == "A":
+                return "accept"
+            elif choice == "E":
+                return "edit"
+            elif choice == "C":
+                return "cancel"
+
+    def _edit_file_content(self, file_path: str, content: str) -> Optional[str]:
+        """Edit file content using external editor.
+        
+        Args:
+            file_path: Path to the file
+            content: Current content
+            
+        Returns:
+            Edited content or None if cancelled
+        """
+        # Create a temporary file with the content
+        with tempfile.NamedTemporaryFile(
+            mode='w',
+            suffix='.tmp',
+            delete=False,
+            prefix='groq_edit_'
+        ) as temp_file:
+            temp_file.write(content)
+            temp_file_path = temp_file.name
+        
+        try:
+            # Get the editor to use
+            editor = self._get_editor()
+            
+            # Open the file in the editor
+            self.console.print(f"\n[green]Opening {file_path} in {editor}...[/green]")
+            self.console.print("[dim]Make your changes and save the file, then close the editor.[/dim]")
+            
+            # Run the editor
+            result = subprocess.run([editor, temp_file_path])
+            
+            if result.returncode != 0:
+                self.console.print("[red]Editor exited with an error[/red]")
+                return None
+            
+            # Read the edited content
+            with open(temp_file_path, 'r') as f:
+                edited_content = f.read()
+            
+            return edited_content
+            
+        except Exception as e:
+            self.console.print(f"[red]Error editing file: {e}[/red]")
+            return None
+        finally:
+            # Clean up temporary file
+            try:
+                os.unlink(temp_file_path)
+            except:
+                pass
+
+    def _get_editor(self) -> str:
+        """Get the editor to use for editing files.
+        
+        Returns:
+            Editor command
+        """
+        # Try to get editor from environment
+        editor = os.environ.get('EDITOR')
+        
+        if not editor:
+            # Fallback to common editors
+            common_editors = ['nano', 'vim', 'vi', 'code', 'subl']
+            for ed in common_editors:
+                if subprocess.run(['which', ed], capture_output=True).returncode == 0:
+                    editor = ed
+                    break
+        
+        if not editor:
+            editor = 'nano'  # Final fallback
+        
+        return editor
     
     def _enhance_file_creation_prompt(
         self,

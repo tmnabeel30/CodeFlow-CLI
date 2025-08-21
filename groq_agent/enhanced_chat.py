@@ -74,7 +74,7 @@ class EnhancedChatSession:
         base_commands = [
             '/help', '/model', '/exit', '/clear', '/history', '/files', '/scan', '/read', '/workspace', '/clear-context',
             '/fast', '/balanced', '/powerful', '/ultra', '/mixtral', '/gemma', '/compound', '/compound-mini',
-            '/next', '/prev', '/shortcuts'
+            '/next', '/prev', '/shortcuts', '/agent', '/advanced'
         ]
         if not self.read_only:
             base_commands.append('/edit')
@@ -346,6 +346,10 @@ class EnhancedChatSession:
         elif cmd == '/agent' or (cmd == '/mode' and args.strip().lower() == 'agent'):
             # Switch to Agent mode
             self._switch_to_mode = 'agent'
+            return True
+        elif cmd == '/advanced' or (cmd == '/mode' and args.strip().lower() == 'advanced'):
+            # Switch to Advanced Agent mode
+            self._switch_to_mode = 'agentic'
             return True
         elif cmd == '/qna' or (cmd == '/mode' and args.strip().lower() == 'qna'):
             self.console.print("[yellow]Already in Q&A mode[/yellow]")
@@ -737,6 +741,11 @@ If they ask to read or modify a file, you can use the /read or /edit commands.
 • /clear - Clear the current chat history
 • /workspace - Show workspace information
 
+[cyan]Mode Switching:[/cyan]
+• /agent - Switch to Agent mode (file modifications)
+• /advanced - Switch to Advanced Agent mode (enhanced AI capabilities)
+• /qna - Switch to Q&A mode (read-only analysis)
+
 [cyan]General:[/cyan]
 • /help - Show this help message
 • /exit - Exit the chat session
@@ -747,6 +756,7 @@ If they ask to read or modify a file, you can use the /read or /edit commands.
 • Direct file reading and editing
 • Beautiful UI with rich formatting
 • File modification capabilities
+• Mode switching within chat
 
 [bold]Usage Tips:[/bold]
 • I can see all files in your workspace automatically
@@ -754,6 +764,7 @@ If they ask to read or modify a file, you can use the /read or /edit commands.
 • Use /read <filename> to focus on a specific file
 • I can suggest improvements and apply them directly
 • Use /clear-context if responses become slow or unreliable
+• Switch between modes anytime with /agent, /advanced, or /qna
         """
         
         panel = Panel(
