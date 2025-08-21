@@ -47,6 +47,15 @@ class AgenticChat:
         self.recent_changes: List[Dict[str, Any]] = []
         self.tool_calls: List[Dict[str, Any]] = []
         
+        # Context Optimization - Full 60k context utilization
+        self.operation_history: List[Dict[str, Any]] = []
+        self.task_context: Dict[str, Any] = {}
+        self.session_state: Dict[str, Any] = {}
+        self.context_buffer: List[Dict[str, Any]] = []
+        self.max_context_tokens = 60000  # Full context window
+        self.current_context_size = 0
+        self.context_optimization_enabled = True
+        
         # Input styling and history
         history_file = config.config_dir / "agentic_chat_history.txt"
         self.history = FileHistory(str(history_file))
@@ -67,6 +76,9 @@ class AgenticChat:
         
         # Initialize workspace
         self._initialize_workspace()
+        
+        # Initialize context optimization
+        self._initialize_context_optimization()
     
     def _initialize_workspace(self) -> None:
         """Initialize the workspace with comprehensive scanning."""
@@ -143,7 +155,11 @@ class AgenticChat:
                         break
                     continue
                 
-                response = self._process_agentic_request(user_input)
+                # Update task context for persistent state
+                self._update_task_context(user_input)
+                
+                # Process request with context optimization
+                response = self._process_agentic_request_with_context(user_input)
                 if response:
                     self._display_agentic_response(response)
                 else:
@@ -282,7 +298,7 @@ class AgenticChat:
         elif cmd == '/tools':
             self._show_tools()
         elif cmd == '/context':
-            self._show_context()
+            self._show_context_status()  # Updated to show context optimization status
         elif cmd == '/history':
             self._show_history()
         # Mode switching
@@ -591,6 +607,76 @@ class AgenticChat:
         
         self.console.print(table)
     
+    def _process_agentic_request_with_context(self, user_input: str) -> Optional[str]:
+        """Process user request using advanced agentic capabilities with full context optimization."""
+        try:
+            # Build smart context using full 60k context window
+            smart_context = self._build_smart_context(user_input)
+            
+            # Optimize context for 60k token limit
+            optimized_context = self._optimize_context_for_60k(smart_context)
+            
+            # Add to operation history
+            self._add_to_operation_history({
+                'type': 'user_request',
+                'description': user_input,
+                'context_size': len(optimized_context) // 4,
+                'context_utilization': self.session_state['context_utilization']
+            })
+            
+            # Check if this is a file modification request
+            if self._is_file_modification_request(user_input):
+                return self._handle_file_modification_request(user_input)
+            
+            # Use enhanced context for AI processing
+            self.messages.append({"role": "user", "content": optimized_context})
+            
+            if len(self.messages) > self.max_history:
+                self.messages = self.messages[-self.max_history:]
+            
+            with Status("[bold green]🤖 Processing with 60k context optimization...", console=self.console):
+                try:
+                    response = self.api_client.chat_completion(
+                        messages=self.messages,
+                        model=self.current_model,
+                        temperature=0.7,
+                        max_tokens=4000
+                    )
+                    
+                    if not response or not response.choices or not response.choices[0].message:
+                        self.console.print("[red]Error: Received empty response from API[/red]")
+                        if self.messages:
+                            self.messages.pop()
+                        return None
+                    
+                    response_content = response.choices[0].message.content
+                    
+                    if not response_content or not response_content.strip():
+                        self.console.print("[red]Error: Received empty response content from API[/red]")
+                        if self.messages:
+                            self.messages.pop()
+                        return None
+                    
+                    self.messages.append({"role": "assistant", "content": response_content})
+                    
+                    # Track successful response in context
+                    self._add_to_operation_history({
+                        'type': 'ai_response',
+                        'description': f"Generated response for: {user_input[:50]}...",
+                        'response_length': len(response_content)
+                    })
+                    
+                    return response_content
+                    
+                except Exception as e:
+                    self.console.print(f"[red]Error getting response: {e}[/red]")
+                    if self.messages:
+                        self.messages.pop()
+                    return None
+                    
+        except Exception as e:
+            return f"❌ Error processing request with context: {str(e)}"
+
     def _process_agentic_request(self, user_input: str) -> Optional[str]:
         """Process user request with advanced agent capabilities."""
         # Check if this is a file modification request
@@ -672,7 +758,43 @@ Please respond intelligently to the user's request, using your tools when approp
         ]
         
         user_lower = user_input.lower()
-        return any(keyword in user_lower for keyword in modification_keywords)
+        
+        # Check for modification keywords
+        if any(keyword in user_lower for keyword in modification_keywords):
+            return True
+        
+        # Check for pronouns that suggest modification of existing content
+        pronouns = ['it', 'this', 'that', 'the', 'these', 'those']
+        if any(pronoun in user_lower for pronoun in pronouns):
+            # Check if there are recent changes or files to modify
+            if self.recent_changes or self.task_context.get('files_modified'):
+                return True
+        
+        # Check for context continuation keywords
+        continuation_keywords = ['make it', 'change it to', 'update it', 'modify it', 'add to it']
+        if any(keyword in user_lower for keyword in continuation_keywords):
+            return True
+        
+        # Check for theme/style modifications (these should modify existing files)
+        style_keywords = ['red', 'black', 'blue', 'green', 'theme', 'color', 'style', 'css']
+        if any(keyword in user_lower for keyword in style_keywords):
+            # If we have existing files, this should modify them
+            if self.recent_changes or self.task_context.get('files_modified'):
+                return True
+        
+        # Check if this seems like a continuation of previous work
+        if self.task_context.get('task_continuation', False):
+            return True
+        
+        # Check if essential context suggests we should modify existing files
+        essential_context = self._extract_essential_context()
+        if essential_context and ('Website/HTML project' in essential_context or 'HTML/Website' in essential_context):
+            # If we have a website project and user mentions content, modify existing files
+            content_keywords = ['college', 'school', 'university', 'delhi', 'mumbai', 'bangalore']
+            if any(keyword in user_lower for keyword in content_keywords):
+                return True
+        
+        return False
     
     def _handle_file_modification_request(self, user_input: str) -> Optional[str]:
         """Handle file modification requests with diff preview and user confirmation."""
@@ -1283,7 +1405,7 @@ Be minimal and focused. Only create what's needed.
   /workspace          - Show workspace information
   /status             - Show system status
   /tools              - Display available tools
-  /context            - Show current context
+  /context            - Show 60k context optimization status
   /history            - Show recent changes
 
 [bold cyan]Model Management:[/bold cyan]
@@ -1476,3 +1598,374 @@ Be minimal and focused. Only create what's needed.
                 return f"{size_bytes:.1f} {unit}"
             size_bytes /= 1024.0
         return f"{size_bytes:.1f} TB"
+
+    # ============================================================================
+    # CONTEXT OPTIMIZATION METHODS - Full 60k Context Window Utilization
+    # ============================================================================
+
+    def _initialize_context_optimization(self) -> None:
+        """Initialize context optimization for full 60k context window usage."""
+        self.console.print("[cyan]🔧 Initializing Context Optimization (60k tokens)...[/cyan]")
+        
+        # Initialize context tracking
+        self.operation_history = []
+        self.task_context = {
+            'current_task': None,
+            'task_start_time': None,
+            'files_modified': [],
+            'operations_performed': [],
+            'context_summary': '',
+            'session_id': str(int(time.time()))
+        }
+        
+        self.session_state = {
+            'total_operations': 0,
+            'files_accessed': set(),
+            'models_used': set(),
+            'context_utilization': 0.0
+        }
+        
+        self.context_buffer = []
+        self.current_context_size = 0
+        
+        self.console.print("[green]✅ Context optimization initialized[/green]")
+
+    def _add_to_operation_history(self, operation: Dict[str, Any]) -> None:
+        """Add operation to history for context building."""
+        operation['timestamp'] = time.time()
+        operation['session_id'] = self.task_context['session_id']
+        
+        self.operation_history.append(operation)
+        self.session_state['total_operations'] += 1
+        
+        # Update context size estimation
+        self._update_context_size()
+
+    def _update_context_size(self) -> None:
+        """Update current context size estimation."""
+        # Rough estimation: 1 token ≈ 4 characters
+        total_chars = sum(len(str(op)) for op in self.operation_history)
+        self.current_context_size = total_chars // 4
+        
+        # Calculate utilization percentage
+        self.session_state['context_utilization'] = (self.current_context_size / self.max_context_tokens) * 100
+
+    def _build_smart_context(self, user_input: str) -> str:
+        """Build smart context using full 60k context window effectively."""
+        context_parts = []
+        
+        # 1. CONVERSATION HISTORY (highest priority - maintain continuity)
+        if self.messages:
+            context_parts.append("=== CONVERSATION HISTORY ===")
+            # Include last 5 conversation exchanges for context continuity
+            recent_messages = self.messages[-10:]  # Last 10 messages (5 exchanges)
+            for msg in recent_messages:
+                role = msg.get('role', 'unknown')
+                content = msg.get('content', '')
+                if role == 'user':
+                    context_parts.append(f"USER: {content}")
+                elif role == 'assistant':
+                    context_parts.append(f"ASSISTANT: {content}")
+                elif role == 'system':
+                    context_parts.append(f"SYSTEM: {content}")
+            context_parts.append("=== END CONVERSATION HISTORY ===\n")
+        
+        # 2. CURRENT TASK CONTEXT (high priority)
+        if self.task_context['current_task']:
+            context_parts.append("=== CURRENT TASK CONTEXT ===")
+            context_parts.append(f"Current Task: {self.task_context['current_task']}")
+            context_parts.append(f"Task Start Time: {self.task_context['task_start_time']}")
+            context_parts.append(f"Files Modified: {', '.join(self.task_context['files_modified'])}")
+            context_parts.append("=== END TASK CONTEXT ===\n")
+        
+        # 3. RECENT OPERATIONS (medium priority)
+        recent_ops = self.operation_history[-15:]  # Last 15 operations for better continuity
+        if recent_ops:
+            context_parts.append("=== RECENT OPERATIONS ===")
+            for op in recent_ops:
+                op_type = op.get('type', 'unknown')
+                description = op.get('description', '')
+                timestamp = time.strftime('%H:%M:%S', time.localtime(op.get('timestamp', 0)))
+                context_parts.append(f"- [{timestamp}] {op_type}: {description}")
+            context_parts.append("=== END RECENT OPERATIONS ===\n")
+        
+        # 4. PROJECT CONTEXT (medium priority)
+        context_parts.append("=== PROJECT CONTEXT ===")
+        context_parts.append(f"Workspace Path: {self.workspace_path}")
+        context_parts.append(f"Accessible Files: {len(self.accessible_files)}")
+        context_parts.append(f"Project Type: {self.project_structure.get('type', 'Unknown')}")
+        
+        # Add recent file changes for context
+        if self.recent_changes:
+            context_parts.append("Recent File Changes:")
+            for change in self.recent_changes[-5:]:  # Last 5 changes
+                file_name = Path(change['file']).name
+                action = change.get('action', 'modified')
+                timestamp = time.strftime('%H:%M:%S', time.localtime(change['timestamp']))
+                context_parts.append(f"  - [{timestamp}] {file_name} ({action})")
+        context_parts.append("=== END PROJECT CONTEXT ===\n")
+        
+        # 5. SESSION STATE (low priority)
+        context_parts.append("=== SESSION STATE ===")
+        context_parts.append(f"Total Operations: {self.session_state['total_operations']}")
+        context_parts.append(f"Files Accessed: {len(self.session_state['files_accessed'])}")
+        context_parts.append(f"Context Utilization: {self.session_state['context_utilization']:.1f}%")
+        context_parts.append(f"Current Model: {self.current_model}")
+        context_parts.append("=== END SESSION STATE ===\n")
+        
+        # 6. CURRENT USER REQUEST (highest priority)
+        context_parts.append("=== CURRENT USER REQUEST ===")
+        context_parts.append(f"User Input: {user_input}")
+        context_parts.append("=== END CURRENT USER REQUEST ===\n")
+        
+        # 7. ESSENTIAL CONTEXT PRESERVATION (highest priority)
+        essential_context = self._extract_essential_context()
+        if essential_context:
+            context_parts.append("=== ESSENTIAL CONTEXT (CRITICAL) ===")
+            context_parts.append("CRITICAL: The following information MUST be preserved in all operations:")
+            context_parts.append(essential_context)
+            context_parts.append("=== END ESSENTIAL CONTEXT ===\n")
+        
+        # 8. CONTEXT INSTRUCTIONS (high priority)
+        context_parts.append("=== CONTEXT INSTRUCTIONS ===")
+        context_parts.append("IMPORTANT: Maintain continuity with previous conversation and tasks.")
+        context_parts.append("If the user refers to previous work (like 'change it to', 'make it', etc.),")
+        context_parts.append("refer to the conversation history and current task context above.")
+        context_parts.append("Do not lose track of what was previously created or modified.")
+        context_parts.append("When modifying existing files, preserve the current content and enhance it.")
+        context_parts.append("CRITICAL: Always preserve the ESSENTIAL CONTEXT above in all operations.")
+        context_parts.append("Do not remove or replace existing content unless explicitly requested.")
+        context_parts.append("=== END CONTEXT INSTRUCTIONS ===")
+        
+        return "\n".join(context_parts)
+
+    def _extract_essential_context(self) -> str:
+        """Extract essential context that must be preserved across all operations."""
+        essential_parts = []
+        
+        # Extract from conversation history
+        if self.messages:
+            # Look for key information in recent messages
+            recent_messages = self.messages[-6:]  # Last 6 messages (3 exchanges)
+            
+            for msg in recent_messages:
+                content = msg.get('content', '').lower()
+                role = msg.get('role', '')
+                
+                # Extract website/HTML context
+                if 'website' in content or 'html' in content or 'web' in content:
+                    essential_parts.append("PROJECT TYPE: Website/HTML project")
+                    break
+                
+                # Extract location context (Delhi, etc.)
+                if 'delhi' in content or 'location' in content or 'city' in content:
+                    essential_parts.append(f"LOCATION: {self._extract_location_from_content(content)}")
+                
+                # Extract content type context (schools, colleges, etc.)
+                if 'school' in content or 'college' in content or 'university' in content:
+                    content_type = self._extract_content_type_from_content(content)
+                    if content_type:
+                        essential_parts.append(f"CONTENT TYPE: {content_type}")
+                
+                # Extract file type context
+                if 'json' in content:
+                    essential_parts.append("FILE TYPE: JSON data structure")
+                elif 'html' in content or 'website' in content:
+                    essential_parts.append("FILE TYPE: HTML/Website")
+        
+        # Extract from task context
+        current_task = self.task_context.get('current_task', '')
+        if current_task:
+            task_lower = current_task.lower()
+            
+            # Extract website context from task
+            if 'website' in task_lower or 'html' in task_lower:
+                essential_parts.append("PROJECT TYPE: Website/HTML project")
+            
+            # Extract location from task
+            if 'delhi' in task_lower:
+                essential_parts.append("LOCATION: Delhi")
+            
+            # Extract content type from task
+            if 'school' in task_lower:
+                essential_parts.append("CONTENT TYPE: Schools")
+            elif 'college' in task_lower:
+                essential_parts.append("CONTENT TYPE: Colleges")
+        
+        # Extract from recent operations
+        recent_ops = self.operation_history[-5:]  # Last 5 operations
+        for op in recent_ops:
+            description = op.get('description', '').lower()
+            
+            # Check for file creation/modification
+            if 'html' in description or 'website' in description:
+                essential_parts.append("PROJECT TYPE: Website/HTML project")
+            
+            # Check for content type
+            if 'school' in description:
+                essential_parts.append("CONTENT TYPE: Schools")
+            elif 'college' in description:
+                essential_parts.append("CONTENT TYPE: Colleges")
+        
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_parts = []
+        for part in essential_parts:
+            if part not in seen:
+                seen.add(part)
+                unique_parts.append(part)
+        
+        return "\n".join(unique_parts) if unique_parts else ""
+
+    def _extract_location_from_content(self, content: str) -> str:
+        """Extract location information from content."""
+        import re
+        
+        # Look for city names
+        cities = ['delhi', 'mumbai', 'bangalore', 'chennai', 'kolkata', 'hyderabad', 'pune', 'ahmedabad']
+        for city in cities:
+            if city in content:
+                return city.title()
+        
+        # Look for location patterns
+        location_patterns = [
+            r'in\s+([A-Za-z]+)',  # "in Delhi"
+            r'of\s+([A-Za-z]+)',  # "of Delhi"
+            r'([A-Za-z]+)\s+schools',  # "Delhi schools"
+            r'([A-Za-z]+)\s+colleges'  # "Delhi colleges"
+        ]
+        
+        for pattern in location_patterns:
+            match = re.search(pattern, content)
+            if match:
+                return match.group(1).title()
+        
+        return "Unknown"
+
+    def _extract_content_type_from_content(self, content: str) -> str:
+        """Extract content type information from content."""
+        if 'school' in content:
+            return "Schools"
+        elif 'college' in content:
+            return "Colleges"
+        elif 'university' in content:
+            return "Universities"
+        elif 'institute' in content:
+            return "Institutes"
+        return ""
+
+    def _optimize_context_for_60k(self, context: str) -> str:
+        """Optimize context to fit within 60k token limit while preserving important information."""
+        # Estimate current context size
+        estimated_tokens = len(context) // 4
+        
+        if estimated_tokens <= self.max_context_tokens:
+            return context
+        
+        # If context is too large, prioritize information
+        self.console.print(f"[yellow]⚠️ Context size ({estimated_tokens} tokens) approaching limit. Optimizing...[/yellow]")
+        
+        # Priority-based context trimming
+        priority_sections = [
+            "=== ESSENTIAL CONTEXT (CRITICAL) ===",
+            "=== CONVERSATION HISTORY ===",
+            "=== CURRENT USER REQUEST ===",
+            "=== CURRENT TASK CONTEXT ===",
+            "=== CONTEXT INSTRUCTIONS ===",
+            "=== RECENT OPERATIONS ===",
+            "=== PROJECT CONTEXT ===",
+            "=== SESSION STATE ==="
+        ]
+        
+        optimized_context = []
+        remaining_tokens = self.max_context_tokens
+        
+        for section in priority_sections:
+            section_content = self._extract_section(context, section)
+            section_tokens = len(section_content) // 4
+            
+            if section_tokens <= remaining_tokens:
+                optimized_context.append(section_content)
+                remaining_tokens -= section_tokens
+            else:
+                # Truncate section to fit
+                truncated_content = section_content[:remaining_tokens * 4]
+                optimized_context.append(truncated_content + "\n[Context truncated for optimization]")
+                break
+        
+        return "\n".join(optimized_context)
+
+    def _extract_section(self, context: str, section_name: str) -> str:
+        """Extract a specific section from context."""
+        lines = context.split('\n')
+        section_lines = []
+        in_section = False
+        
+        for line in lines:
+            if line.startswith(section_name):
+                in_section = True
+                section_lines.append(line)
+            elif in_section and line.strip() and not line.startswith('- '):
+                # End of section
+                break
+            elif in_section:
+                section_lines.append(line)
+        
+        return '\n'.join(section_lines)
+
+    def _update_task_context(self, task_description: str, files_affected: List[str] = None) -> None:
+        """Update current task context for persistent state."""
+        # Check if this is a continuation of a previous task
+        previous_task = self.task_context.get('current_task', '')
+        
+        # If the new task seems related to the previous one, maintain continuity
+        if previous_task and any(keyword in task_description.lower() for keyword in ['change', 'modify', 'update', 'make', 'add', 'remove', 'it', 'this', 'that']):
+            # This is likely a continuation/modification of the previous task
+            self.task_context['current_task'] = f"{previous_task} → {task_description}"
+            self.task_context['task_continuation'] = True
+        else:
+            # This is a new task
+            self.task_context['current_task'] = task_description
+            self.task_context['task_continuation'] = False
+        
+        self.task_context['task_start_time'] = time.time()
+        
+        if files_affected:
+            self.task_context['files_modified'].extend(files_affected)
+            # Keep only unique files
+            self.task_context['files_modified'] = list(set(self.task_context['files_modified']))
+        
+        # Add to operation history with enhanced tracking
+        self._add_to_operation_history({
+            'type': 'task_update',
+            'description': f"Task: {task_description}",
+            'files_affected': files_affected or [],
+            'is_continuation': self.task_context.get('task_continuation', False),
+            'previous_task': previous_task
+        })
+
+    def _get_context_summary(self) -> str:
+        """Get a summary of current context for display."""
+        summary = f"""
+[bold cyan]📊 Context Summary (60k Token Optimization)[/bold cyan]
+
+[bold]Current Task:[/bold] {self.task_context.get('current_task', 'None')}
+[bold]Session ID:[/bold] {self.task_context.get('session_id', 'Unknown')}
+[bold]Total Operations:[/bold] {self.session_state['total_operations']}
+[bold]Context Utilization:[/bold] {self.session_state['context_utilization']:.1f}%
+[bold]Files Modified:[/bold] {len(self.task_context.get('files_modified', []))}
+[bold]Recent Operations:[/bold] {len(self.operation_history[-5:])} in last 5
+        """.strip()
+        
+        return summary
+
+    def _show_context_status(self) -> None:
+        """Show current context status and optimization info."""
+        summary = self._get_context_summary()
+        panel = Panel(
+            summary,
+            title="🔧 Context Optimization Status",
+            border_style="cyan",
+            padding=(1, 2)
+        )
+        self.console.print(panel)
