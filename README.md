@@ -76,6 +76,11 @@ codeflow --api-key "your-groq-api-key"
 - `/analyze <file>` - Analyze code structure, complexity, and quality
 - `/read <file>` - Read file with enhanced analysis
 - `/edit <file1> [file2 ...]` - Intelligent multi-file editing with AI assistance
+- `/create <file1> [file2 ...]` - Create one or more files with AI assistance
+- `/delete <file>` - Delete files with confirmation
+- `/files` - List all accessible files with details
+- `/scan` - Rescan workspace for new files
+- `/workspace` - Show workspace information
 - `/status` - Show comprehensive system status
 - `/tools` - Display all available agentic tools
 - `/context` - Show current workspace context
@@ -85,6 +90,11 @@ codeflow --api-key "your-groq-api-key"
 ### 🔄 Quick Model Switching
 - `/fast`, `/balanced`, `/powerful`, `/ultra` - Quick model switches
 - `/next`, `/prev` - Cycle through available models
+
+### 🔀 Mode Switching (Available in all modes)
+- `/qna` - Switch to Q&A mode (read-only analysis)
+- `/agent` - Switch to Agent mode (file modifications)
+- `/advanced` - Switch to Advanced Agent mode (enhanced AI capabilities)
 
 ## 📚 Examples
 
@@ -100,6 +110,10 @@ AI: The CLI entry point is defined in `groq_agent/cli.py`...
 
 # Read and preview files
 /read groq_agent/cli.py
+
+# Switch to other modes anytime
+/agent      # Switch to Agent mode
+/advanced   # Switch to Advanced Agent mode
 ```
 
 ### Agent Mode (File Modifications)
@@ -112,6 +126,10 @@ AI: The CLI entry point is defined in `groq_agent/cli.py`...
 /edit groq_agent/enhanced_chat.py groq_agent/agentic_chat.py
 What changes? Improve the prompt styling and add a bottom toolbar.
 # Shows diff, asks for confirmation before applying
+
+# Switch to other modes anytime
+/qna        # Switch to Q&A mode
+/advanced   # Switch to Advanced Agent mode
 ```
 
 ### 🚀 Advanced Agent Mode
@@ -132,10 +150,41 @@ codeflow
 /status
 # Shows workspace info, recent changes, tool usage
 
-# Intelligent file editing
+# Intelligent file editing with diff preview
 /edit src/main.py tests/test_main.py
 What changes? Add error handling for API calls and update tests accordingly
-# AI understands context and proposes intelligent changes
+# AI shows diffs with green + for additions, red - for removals
+
+# Natural language file modifications
+"Add green color to website" → Modifies existing files with diff preview
+"Change button style" → Shows changes with + and - indicators
+
+# Intelligent minimal file creation
+"Create a website for top schools in Delhi"
+# AI automatically:
+# 1. Determines ONLY the files needed (e.g., just index.html and styles.css)
+# 2. Creates minimal file structure (no unnecessary README.md, etc.)
+# 3. Generates content for each file
+# 4. Shows preview of all files
+# 5. Asks for your action (Accept/Reject/Review/Edit)
+
+# Examples of intelligent file creation:
+"Create a list of schools" → Creates only schools.json
+"Make a simple website" → Creates only index.html
+"Create a Python script" → Creates only main.py
+
+# Command-line multi-file creation
+/create src/main.py src/config.py src/utils.py
+# AI automatically determines content for each file
+
+# List and manage files
+/files       # List all accessible files
+/scan        # Rescan workspace for new files
+/workspace   # Show workspace information
+
+# Switch to other modes anytime
+/qna         # Switch to Q&A mode
+/agent       # Switch to Agent mode
 ```
 
 ### Quick Model Switching
@@ -158,6 +207,7 @@ pip uninstall codeflow-cli
 ### 🤖 Advanced AI Capabilities
 - **Semantic Understanding**: Search code by meaning, not just text
 - **Context Awareness**: AI understands your project structure and recent changes
+- **Smart File Creation**: Creates only the files you actually need (no unnecessary README.md, etc.)
 - **Tool Orchestration**: Coordinate multiple operations intelligently
 - **Change Tracking**: Monitor all modifications with full history
 - **Quality Analysis**: Automated code structure and complexity analysis

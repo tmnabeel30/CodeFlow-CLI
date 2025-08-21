@@ -180,7 +180,9 @@ class GroqAPIClient:
                 "content": (
                     "You are a helpful programming assistant. "
                     "Provide code suggestions and improvements. "
-                    "Return only the modified code, not explanations."
+                    "Return only the modified code, not explanations. "
+                    "Do NOT wrap your response in markdown code blocks (```). "
+                    "Return the raw code content only."
                 )
             },
             {
@@ -196,9 +198,34 @@ class GroqAPIClient:
                 temperature=temperature,
                 max_tokens=4000
             )
-            return response.choices[0].message.content
+            content = response.choices[0].message.content
+            
+            # Clean up markdown code blocks if present
+            content = self._clean_markdown_code_blocks(content)
+            
+            return content
         except Exception as e:
             raise RuntimeError(f"Error generating code suggestions: {e}")
+
+    def _clean_markdown_code_blocks(self, content: str) -> str:
+        """Remove markdown code blocks from AI response.
+        
+        Args:
+            content: Raw AI response content
+            
+        Returns:
+            Cleaned content without markdown code blocks
+        """
+        import re
+        
+        # Remove markdown code blocks (```language ... ```)
+        content = re.sub(r'```[a-zA-Z]*\n', '', content)
+        content = re.sub(r'```\s*$', '', content)
+        
+        # Remove any leading/trailing whitespace
+        content = content.strip()
+        
+        return content
     
     def validate_api_key(self) -> bool:
         """Validate that the API key is working.
