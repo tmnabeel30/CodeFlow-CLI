@@ -688,11 +688,8 @@ Return the improved code with all enhancements applied.
             file_path = spec['path']
             prompt = spec['prompt']
             
-            # Check if file already exists
-            if os.path.exists(file_path):
-                if not Prompt.ask(f"File {file_path} already exists. Overwrite?", default=False):
-                    results[file_path] = False
-                    continue
+            # Don't ask to overwrite - just proceed with changes
+            # File existence will be shown in the diff preview
             
             # Generate file content
             self.console.print(f"\n[bold]Generating file: {file_path}[/bold]")
@@ -718,15 +715,15 @@ Return the improved code with all enhancements applied.
             self.console.print("[red]No files to create[/red]")
             return results
         
-        # Show preview of all files
-        self._show_multiple_files_preview(file_contents)
+        # Show diff preview for all files (treating creation as diff from empty)
+        self._show_multiple_files_diff_preview(file_contents)
         
-        # Get user confirmation
+        # Get user confirmation using diff manager
         if not auto_apply:
             choice = self._prompt_multiple_files_action()
             
             if choice == "accept":
-                # Create all files
+                # Create all files at once
                 for file_path, content in file_contents.items():
                     try:
                         # Ensure directory exists
@@ -742,9 +739,19 @@ Return the improved code with all enhancements applied.
                         self.console.print(f"[red]✗ Error creating {file_path}: {e}[/red]")
                         results[file_path] = False
             elif choice == "edit":
-                # Allow editing of each file
+                # Allow editing of each file using diff manager
                 for file_path, content in file_contents.items():
-                    edited_content = self._edit_file_content(file_path, content)
+                    # Read existing content if file exists, otherwise use empty
+                    existing_content = ""
+                    if os.path.exists(file_path):
+                        with open(file_path, 'r') as f:
+                            existing_content = f.read()
+                    
+                    # Use diff manager for editing
+                    edited_content = self.diff_manager.edit_suggestions(
+                        existing_content, content, file_path
+                    )
+                    
                     if edited_content is not None:
                         try:
                             # Ensure directory exists
@@ -815,6 +822,52 @@ Return the improved code with all enhancements applied.
         for i, (file_path, content) in enumerate(file_contents.items(), 1):
             self.console.print(f"\n[bold yellow]{i}. {file_path}[/bold yellow]")
             self.diff_manager.show_file_preview(file_path, content, f"Generated File {i}")
+            
+            # Add separator between files
+            if i < len(file_contents):
+                self.console.print("\n" + "─" * 80 + "\n")
+
+    def _show_multiple_files_diff_preview(self, file_contents: Dict[str, str]) -> None:
+        """Show diff preview of multiple files to be created (treating as diff from empty).
+        
+        Args:
+            file_contents: Dictionary mapping file paths to content
+        """
+        self.console.print(f"\n[bold cyan]📁 Project Structure - {len(file_contents)} files to be created:[/bold cyan]")
+        
+        # Show file structure overview
+        structure_table = Table(title="📋 File Structure", show_header=True, header_style="bold magenta")
+        structure_table.add_column("#", style="dim", width=4)
+        structure_table.add_column("File Path", style="cyan")
+        structure_table.add_column("Type", style="green")
+        structure_table.add_column("Status", style="yellow")
+        
+        for i, (file_path, content) in enumerate(file_contents.items(), 1):
+            path = Path(file_path)
+            file_type = path.suffix or "No extension"
+            exists = "🆕 New File" if not os.path.exists(file_path) else "🔄 Overwrite"
+            
+            structure_table.add_row(str(i), str(path), file_type, exists)
+        
+        self.console.print(structure_table)
+        
+        # Show diff preview for each file
+        self.console.print(f"\n[bold cyan]📄 File Changes (Diff View):[/bold cyan]")
+        
+        for i, (file_path, content) in enumerate(file_contents.items(), 1):
+            self.console.print(f"\n[bold yellow]{i}. {file_path}[/bold yellow]")
+            
+            # Read existing content if file exists, otherwise use empty
+            existing_content = ""
+            if os.path.exists(file_path):
+                try:
+                    with open(file_path, 'r') as f:
+                        existing_content = f.read()
+                except:
+                    existing_content = ""
+            
+            # Show diff between existing (or empty) and new content
+            self.diff_manager.show_diff(existing_content, content, file_path)
             
             # Add separator between files
             if i < len(file_contents):
