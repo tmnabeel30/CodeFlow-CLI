@@ -731,17 +731,17 @@ Please respond intelligently to the user's request, using your tools when approp
             else:
                 target_files = relevant_files
 
-            # Process each target file
+            # Process each target file with diff preview
             results = {}
             for target_file in target_files:
                 self.console.print(f"[cyan]Processing: {target_file}[/cyan]")
                 
-                # Use file operations to handle the modification
+                # Always use file operations with diff preview (never auto-apply)
                 success = self.file_ops.review_file(
                     target_file,
                     self.current_model,
                     user_input,
-                    auto_apply=False
+                    auto_apply=False  # Always show diffs, never overwrite silently
                 )
                 
                 results[target_file] = success
@@ -762,9 +762,9 @@ Please respond intelligently to the user's request, using your tools when approp
             if failed_files:
                 self.console.print(f"[red]❌ Failed to process: {', '.join(failed_files)}[/red]")
             
-            # Ask for user confirmation
+            # Single confirmation for the entire task
             if successful_files:
-                self._ask_for_task_confirmation(user_input, successful_files)
+                self._ask_for_single_task_confirmation(user_input, successful_files)
             
             return f"✅ Task completed. {len(successful_files)} files processed successfully."
                 
@@ -809,7 +809,7 @@ Please respond intelligently to the user's request, using your tools when approp
         
         self.console.print(f"[green]📋 Determined {len(file_specs)} files needed for this project[/green]")
         
-        # Create files with user confirmation
+        # Create files with diff preview (always show changes)
         results = self.file_ops.create_multiple_files_from_prompt(
             file_specs,
             self.current_model,
@@ -828,9 +828,9 @@ Please respond intelligently to the user's request, using your tools when approp
                 self.accessible_files.add(file_path)
                 successful_files.append(file_path)
         
-        # Ask for user confirmation
+        # Single confirmation for the entire task
         if successful_files:
-            self._ask_for_task_confirmation(user_input, successful_files)
+            self._ask_for_single_task_confirmation(user_input, successful_files)
         
         return f"✅ Created {len(successful_files)} files successfully."
 
@@ -967,6 +967,38 @@ Be minimal and focused. Only create what's needed.
                 {"path": "main.html", "prompt": f"Main file for: {user_input}"}
             ]
 
+    def _ask_for_single_task_confirmation(self, task_description: str, affected_files: List[str]) -> None:
+        """Ask user for single confirmation after completing a task."""
+        self.console.print(f"\n[bold cyan]🎉 Task completed: {task_description}[/bold cyan]")
+        
+        # Show brief project summary
+        self._show_brief_project_summary(affected_files)
+        
+        self.console.print("\n[bold]What would you like to do?[/bold]")
+        
+        table = Table(show_header=False, box=None)
+        table.add_column("Option", style="cyan")
+        table.add_column("Description")
+        
+        table.add_row("A", "Accept all changes and continue")
+        table.add_row("R", "Review changes in detail")
+        table.add_row("C", "Continue with next task")
+        
+        self.console.print(table)
+        
+        choice = Prompt.ask(
+            "Choose an option",
+            choices=["A", "R", "C"],
+            default="C"
+        )
+        
+        if choice == "R":
+            self._review_changes(affected_files)
+        elif choice == "A":
+            self.console.print("[green]✅ All changes accepted. Ready for next task.[/green]")
+        else:  # C
+            self.console.print("[cyan]Continuing with next task...[/cyan]")
+
     def _ask_for_task_confirmation(self, task_description: str, affected_files: List[str]) -> None:
         """Ask user for confirmation after completing a task."""
         self.console.print(f"\n[bold cyan]🎉 Task completed: {task_description}[/bold cyan]")
@@ -1004,6 +1036,35 @@ Be minimal and focused. Only create what's needed.
             self.console.print("[green]✅ All changes accepted. Ready for next task.[/green]")
         else:  # C
             self.console.print("[cyan]Continuing with next task...[/cyan]")
+
+    def _show_brief_project_summary(self, affected_files: List[str]) -> None:
+        """Show a brief summary of the project structure."""
+        self.console.print(f"\n[bold cyan]📊 Project Summary:[/bold cyan]")
+        
+        # Show file structure
+        structure_table = Table(title="📁 Created Files", show_header=True, header_style="bold magenta")
+        structure_table.add_column("#", style="dim", width=4)
+        structure_table.add_column("File Path", style="cyan")
+        structure_table.add_column("Type", style="green")
+        structure_table.add_column("Status", style="yellow")
+        
+        for i, file_path in enumerate(affected_files, 1):
+            path = Path(file_path)
+            file_type = path.suffix or "No extension"
+            
+            # Check if file exists and get size
+            try:
+                if path.exists():
+                    size = path.stat().st_size
+                    status = f"✅ {size} bytes"
+                else:
+                    status = "❌ Not found"
+            except:
+                status = "❓ Unknown"
+            
+            structure_table.add_row(str(i), str(path), file_type, status)
+        
+        self.console.print(structure_table)
 
     def _show_project_summary(self, affected_files: List[str]) -> None:
         """Show a summary of the project structure."""
@@ -1213,8 +1274,8 @@ Be minimal and focused. Only create what's needed.
   /files              - List all accessible files
   /scan               - Rescan workspace for new files
   /read <file>        - Read and preview a file
-  /edit <file1> [file2 ...] - Edit one or more files with diff preview
-  /create <file1> [file2 ...] - Create one or more files with AI assistance
+  /edit <file1> [file2 ...] - Edit one or more files (always shows diffs)
+  /create <file1> [file2 ...] - Create one or more files (always shows diffs)
   /delete <file>      - Delete a file
   /analyze <file>     - Analyze code structure and quality
 
@@ -1246,6 +1307,7 @@ Be minimal and focused. Only create what's needed.
 
 [bold yellow]💡 Tip:[/bold yellow] You can edit multiple files simultaneously with /edit file1 file2 file3
 [bold yellow]💡 Tip:[/bold yellow] Use natural language to describe file changes
+[bold yellow]💡 Tip:[/bold yellow] All changes are shown as diffs: [bold green]+ Green[/bold green] for additions, [bold red]- Red[/bold red] for deletions
         """
         
         panel = Panel(
