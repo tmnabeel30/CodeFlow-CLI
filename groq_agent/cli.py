@@ -2,10 +2,11 @@
 
 import sys
 import click
+from pathlib import Path
 from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Prompt
-from typing import Optional
+from typing import Optional, Dict
 
 from .config import ConfigurationManager
 from .api_client import GroqAPIClient
@@ -14,6 +15,9 @@ from .enhanced_chat import EnhancedChatSession
 from .intelligent_agent import IntelligentAgent
 from .model_selector import ModelSelector
 from .file_operations import FileOperations
+from .handbook_manager import HandbookManager
+from .recursive_agent import RecursiveAgent
+from .agentic_system import AgenticSystem
 
 
 @click.group(invoke_without_command=True)
@@ -52,10 +56,18 @@ def main(ctx, model: Optional, select_model: bool, api_key: Optional,
         console.print("3. Configure in ~/.groq/config.yaml")
         sys.exit(1)
     
+    # Initialize handbook manager and recursive agent
+    handbook_manager = HandbookManager(Path.cwd(), config)
+    agentic_system = AgenticSystem(config, api_client, handbook_manager)
+    recursive_agent = RecursiveAgent(config, api_client, handbook_manager, agentic_system)
+    
     # Store context objects
     ctx.obj = {
         'config': config,
-        'api_client': api_client
+        'api_client': api_client,
+        'handbook_manager': handbook_manager,
+        'recursive_agent': recursive_agent,
+        'agentic_system': agentic_system
     }
     
     # Handle model selection
@@ -74,7 +86,7 @@ def main(ctx, model: Optional, select_model: bool, api_key: Optional,
     
     # If no subcommand is provided, start interactive chat (default behavior)
     if ctx.invoked_subcommand is None:
-        start_interactive_chat(config, api_client)
+        start_interactive_chat(config, api_client, ctx_obj=ctx.obj)
 
 
 @main.command()
@@ -97,7 +109,61 @@ def chat(ctx, model: Optional, temperature: float, max_tokens: Optional, prompt:
         send_single_message(api_client, current_model, prompt, temperature, max_tokens)
     else:
         # Interactive chat mode
-        start_interactive_chat(config, api_client, current_model)
+        start_interactive_chat(config, api_client, current_model, ctx_obj=ctx.obj)
+
+
+@main.command()
+@click.option('--goal', '-g', help='Description of the goal to accomplish')
+@click.option('--prompt', '-p', help='Detailed user prompt for the goal')
+@click.option('--show-status', is_flag=True, help='Show status of recent goals')
+@click.option('--goal-id', help='Show status of specific goal ID')
+@click.pass_context
+def recursive(ctx, goal: str, prompt: str, show_status: bool, goal_id: str):
+    """Execute a goal using the recursive agent system."""
+    
+    recursive_agent = ctx.obj['recursive_agent']
+    console = Console()
+    
+    if show_status:
+        if goal_id:
+            status = recursive_agent.get_goal_status(goal_id)
+            if status:
+                console.print(f"[green]Goal Status:[/green] {status}")
+            else:
+                console.print(f"[red]Goal not found: {goal_id}[/red]")
+        else:
+            recent_goals = recursive_agent.get_recent_goals()
+            if recent_goals:
+                console.print("[green]Recent Goals:[/green]")
+                for goal_info in recent_goals:
+                    console.print(f"  • {goal_info['id']}: {goal_info['description']} ({goal_info['status']})")
+            else:
+                console.print("[yellow]No recent goals found.[/yellow]")
+        return
+    
+    # Check if goal and prompt are provided
+    if not goal or not prompt:
+        console.print("[red]Error: Both --goal and --prompt are required for execution.[/red]")
+        console.print("[yellow]Use --show-status to view recent goals.[/yellow]")
+        return
+    
+    # Execute the goal
+    console.print(f"[bold green]🎯 Executing Goal:[/bold green] {goal}")
+    console.print(f"[dim]Prompt:[/dim] {prompt}")
+    
+    try:
+        result = recursive_agent.execute_goal(prompt, goal)
+        
+        if result['success']:
+            console.print(f"[green]✅ Goal completed successfully![/green]")
+            console.print(f"[dim]Goal ID:[/dim] {result['goal_id']}")
+            console.print(f"[dim]Files changed:[/dim] {len(result['files_changed'])}")
+            console.print(f"[dim]Sub-goals completed:[/dim] {result['sub_goals_completed']}")
+        else:
+            console.print(f"[red]❌ Goal failed: {result.get('error', 'Unknown error')}[/red]")
+            
+    except Exception as e:
+        console.print(f"[red]❌ Error executing goal: {str(e)}[/red]")
 
 
 @main.command()
@@ -255,7 +321,7 @@ def configure(ctx, api_key: str):
 
 
 def start_interactive_chat(config: ConfigurationManager, api_client: GroqAPIClient, 
-                          model: Optional = None) -> None:
+                          model: Optional = None, ctx_obj: Optional[Dict] = None) -> None:
     """Start an interactive chat session."""
     
     # Set model if provided
@@ -312,7 +378,8 @@ def start_interactive_chat(config: ConfigurationManager, api_client: GroqAPIClie
     while True:
         if mode == "qna":
             # Start enhanced chat in read-only mode
-            session = EnhancedChatSession(config, api_client, read_only=True)
+            handbook_manager = ctx_obj.get('handbook_manager') if ctx_obj else None
+            session = EnhancedChatSession(config, api_client, read_only=True, handbook_manager=handbook_manager)
             switch = session.start()
             if switch == 'agent':
                 mode = 'agent'
@@ -323,7 +390,14 @@ def start_interactive_chat(config: ConfigurationManager, api_client: GroqAPIClie
             break
         elif mode == "agent":
             # Start intelligent agent mode (can modify files)
-            agent = IntelligentAgent(config, api_client)
+            handbook_manager = ctx_obj.get('handbook_manager') if ctx_obj else None
+            agent = IntelligentAgent(config, api_client, handbook_manager)
+            
+            # Set up recursive agent integration
+            recursive_agent = ctx_obj.get('recursive_agent') if ctx_obj else None
+            if recursive_agent:
+                agent.set_recursive_agent(recursive_agent)
+            
             switch = agent.start_interactive_mode()
             if switch == 'qna':
                 mode = 'qna'

@@ -29,23 +29,29 @@ from .config import ConfigurationManager
 from .api_client import GroqAPIClient
 from .model_selector import ModelSelector
 from .file_operations import FileOperations
+from .handbook_manager import HandbookManager
+from .recursive_agent import RecursiveAgent
 
 
 class IntelligentAgent:
     """Intelligent agent that can read, understand, and modify files automatically."""
     
-    def __init__(self, config: ConfigurationManager, api_client: GroqAPIClient):
+    def __init__(self, config: ConfigurationManager, api_client: GroqAPIClient, 
+                 handbook_manager: Optional[HandbookManager] = None):
         """Initialize the intelligent agent.
         
         Args:
             config: Configuration manager instance
             api_client: Groq API client instance
+            handbook_manager: Optional handbook manager instance
         """
         self.config = config
         self.api_client = api_client
         self.model_selector = ModelSelector(api_client)
         self.file_ops = FileOperations(api_client)
+        self.handbook_manager = handbook_manager
         self.console = Console()
+        
         # Input styling and history (align with Q&A UI)
         history_file = config.config_dir / "agent_history.txt"
         self.history = FileHistory(str(history_file))
@@ -54,7 +60,8 @@ class IntelligentAgent:
             'toolbar': 'reverse ansimagenta'
         })
         self.command_completer = WordCompleter([
-            '/help', '/files', '/structure', '/model', '/status', '/exit', '/qna', '/mode'
+            '/help', '/files', '/structure', '/model', '/status', '/exit', '/qna', '/mode',
+            '/handbook', '/recursive', '/goals', '/context'
         ])
         
         # Agent state
@@ -63,6 +70,9 @@ class IntelligentAgent:
         self.accessible_files: Set[str] = set()
         self.file_contents: Dict[str, str] = {}
         self.project_structure: Dict[str, Any] = {}
+        
+        # Recursive agent integration
+        self.recursive_agent: Optional[RecursiveAgent] = None
         
         # Auto-scan workspace
         self._scan_workspace()
@@ -920,6 +930,14 @@ Original response:
             self._show_model_info()
         elif command == '/status':
             self._show_status()
+        elif command == '/handbook':
+            self.show_handbook_status()
+        elif command == '/goals':
+            self.show_goals_status()
+        elif command == '/context':
+            self.show_context_chain()
+        elif command.startswith('/recursive'):
+            self._handle_recursive_command(command)
         elif command == '/qna' or (command.startswith('/mode') and 'qna' in command):
             # Switch back to Q&A mode
             self._switch_to_mode = 'qna'
@@ -939,6 +957,10 @@ Original response:
             "[cyan]/structure[/cyan] - Show project structure\n"
             "[cyan]/model[/cyan]    - Show current AI model info\n"
             "[cyan]/status[/cyan]   - Show current status\n"
+            "[cyan]/handbook[/cyan] - Show handbook status\n"
+            "[cyan]/goals[/cyan]    - Show recent goals\n"
+            "[cyan]/context[/cyan]  - Show context chain\n"
+            "[cyan]/recursive[/cyan] - Execute recursive goal\n"
             "[cyan]/exit[/cyan]     - Exit the application\n\n"
             "[dim]Just type your question or describe a bug to get started![/dim]",
             title="[bold blue]Help[/bold blue]",
@@ -1081,3 +1103,103 @@ Original response:
         
         # Add a separator after response
         self.console.print("\n" + "─" * 80)
+    
+    def set_recursive_agent(self, recursive_agent: RecursiveAgent) -> None:
+        """Set the recursive agent for integration."""
+        self.recursive_agent = recursive_agent
+    
+    def execute_recursive_goal(self, user_prompt: str, goal_description: str) -> Dict[str, Any]:
+        """Execute a goal using the recursive agent system."""
+        if not self.recursive_agent:
+            return {
+                'success': False,
+                'error': 'Recursive agent not initialized'
+            }
+        
+        try:
+            result = self.recursive_agent.execute_goal(user_prompt, goal_description)
+            return result
+        except Exception as e:
+            return {
+                'success': False,
+                'error': str(e)
+            }
+    
+    def show_handbook_status(self) -> None:
+        """Show the current handbook status."""
+        if not self.handbook_manager:
+            self.console.print("[red]Handbook manager not available[/red]")
+            return
+        
+        handbook_path = self.handbook_manager.handbook_path
+        if handbook_path.exists():
+            self.console.print(f"[green]✓ Handbook found: {handbook_path}[/green]")
+            
+            # Show recent changes
+            if self.handbook_manager.change_history:
+                self.console.print(f"[cyan]Recent changes: {len(self.handbook_manager.change_history)}[/cyan]")
+                for change in self.handbook_manager.change_history[-3:]:
+                    self.console.print(f"  • {change.timestamp}: {change.goal}")
+            else:
+                self.console.print("[yellow]No changes recorded yet[/yellow]")
+        else:
+            self.console.print(f"[red]Handbook not found: {handbook_path}[/red]")
+    
+    def show_goals_status(self) -> None:
+        """Show the status of recent goals."""
+        if not self.recursive_agent:
+            self.console.print("[red]Recursive agent not available[/red]")
+            return
+        
+        recent_goals = self.recursive_agent.get_recent_goals()
+        if recent_goals:
+            self.console.print("[green]Recent Goals:[/green]")
+            for goal_info in recent_goals:
+                status_color = "green" if goal_info['status'] == 'completed' else "yellow"
+                self.console.print(f"  • {goal_info['id']}: {goal_info['description']} [{status_color}]{goal_info['status']}[/{status_color}]")
+        else:
+            self.console.print("[yellow]No goals executed yet[/yellow]")
+    
+    def show_context_chain(self) -> None:
+        """Show the current context chain."""
+        if not self.recursive_agent:
+            self.console.print("[red]Recursive agent not available[/red]")
+            return
+        
+        context_chain = self.recursive_agent.context_chain
+        if context_chain:
+            self.console.print("[green]Context Chain:[/green]")
+            for i, context in enumerate(context_chain[-5:], 1):
+                self.console.print(f"  {i}. {context['sub_goal_id']}: {context['description']}")
+                if context.get('files_changed'):
+                    self.console.print(f"     Files: {', '.join(context['files_changed'])}")
+        else:
+            self.console.print("[yellow]No context chain available[/yellow]")
+    
+    def _handle_recursive_command(self, command: str) -> None:
+        """Handle recursive agent commands."""
+        parts = command.split(' ', 2)
+        if len(parts) < 3:
+            self.console.print("[red]Usage: /recursive <goal> <prompt>[/red]")
+            self.console.print("[yellow]Example: /recursive 'Add new feature' 'I want to add a new function to handle user input'[/yellow]")
+            return
+        
+        goal = parts[1]
+        prompt = parts[2]
+        
+        self.console.print(f"[bold green]🎯 Executing Recursive Goal:[/bold green] {goal}")
+        self.console.print(f"[dim]Prompt:[/dim] {prompt}")
+        
+        try:
+            result = self.execute_recursive_goal(prompt, goal)
+            
+            if result['success']:
+                self.console.print(f"[green]✅ Recursive goal completed successfully![/green]")
+                self.console.print(f"[dim]Goal ID:[/dim] {result.get('goal_id', 'N/A')}")
+                self.console.print(f"[dim]Files changed:[/dim] {len(result.get('files_changed', []))}")
+                self.console.print(f"[dim]Sub-goals completed:[/dim] {result.get('sub_goals_completed', 0)}")
+            else:
+                self.console.print(f"[red]❌ Recursive goal failed: {result.get('error', 'Unknown error')}[/red]")
+                
+        except Exception as e:
+            self.console.print(f"[red]❌ Error executing recursive goal: {str(e)}[/red]")

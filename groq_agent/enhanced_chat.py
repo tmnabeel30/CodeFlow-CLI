@@ -31,6 +31,7 @@ from .config import ConfigurationManager
 from .api_client import GroqAPIClient
 from .model_selector import ModelSelector
 from .file_operations import FileOperations
+from .handbook_manager import HandbookManager
 
 
 class EnhancedChatSession:
@@ -39,17 +40,21 @@ class EnhancedChatSession:
     Supports an optional read-only mode to prevent file modifications.
     """
     
-    def __init__(self, config: ConfigurationManager, api_client: GroqAPIClient, read_only: bool = False):
+    def __init__(self, config: ConfigurationManager, api_client: GroqAPIClient, read_only: bool = False,
+                 handbook_manager: Optional[HandbookManager] = None):
         """Initialize the enhanced chat session.
         
         Args:
             config: Configuration manager instance
             api_client: Groq API client instance
+            read_only: Whether to run in read-only mode
+            handbook_manager: Optional handbook manager instance
         """
         self.config = config
         self.api_client = api_client
         self.model_selector = ModelSelector(api_client)
         self.file_ops = FileOperations(api_client)
+        self.handbook_manager = handbook_manager
         self.console = Console()
         self.read_only = read_only
         self.prompt_style = Style.from_dict({

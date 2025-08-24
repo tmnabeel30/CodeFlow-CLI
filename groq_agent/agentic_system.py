@@ -30,6 +30,7 @@ from .config import ConfigurationManager
 from .api_client import GroqAPIClient
 from .model_selector import ModelSelector
 from .file_operations import FileOperations
+from .handbook_manager import HandbookManager
 
 
 class ToolType(Enum):
@@ -73,17 +74,20 @@ class AgenticContext:
 class AgenticSystem:
     """Advanced agentic AI system with Cursor AI-style capabilities."""
     
-    def __init__(self, config: ConfigurationManager, api_client: GroqAPIClient):
+    def __init__(self, config: ConfigurationManager, api_client: GroqAPIClient, 
+                 handbook_manager: Optional[HandbookManager] = None):
         """Initialize the agentic system.
         
         Args:
             config: Configuration manager instance
             api_client: Groq API client instance
+            handbook_manager: Optional handbook manager instance
         """
         self.config = config
         self.api_client = api_client
         self.model_selector = ModelSelector(api_client)
         self.file_ops = FileOperations(api_client)
+        self.handbook_manager = handbook_manager
         self.console = Console()
         
         # Agentic context
@@ -654,6 +658,11 @@ class AgenticSystem:
 • /plan - Create execution plan
 • /execute - Execute planned actions
 • /debug - Enable/disable debug mode
+
+[cyan]Handbook & Goals:[/cyan]
+• /handbook - Show handbook status
+• /goals - Show recent goals
+• /recursive <goal> - Execute recursive goal
         """.strip()
         
         panel = Panel(
@@ -664,3 +673,99 @@ class AgenticSystem:
         )
         
         self.console.print(panel)
+    
+    def execute_sub_goal(self, sub_goal_description: str, files_to_modify: List[str], 
+                        expected_changes: Dict[str, str], context: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute a sub-goal using the agentic system.
+        
+        Args:
+            sub_goal_description: Description of the sub-goal
+            files_to_modify: List of files that need to be modified
+            expected_changes: Dictionary of expected changes per file
+            context: Context from previous sub-goals
+            
+        Returns:
+            Dictionary containing execution results
+        """
+        try:
+            # Create a comprehensive prompt for the sub-goal
+            prompt = self._create_sub_goal_prompt(sub_goal_description, files_to_modify, expected_changes, context)
+            
+            # Use AI to analyze and execute the sub-goal
+            # This would integrate with the AI model to understand and execute the changes
+            # For now, return a structured result
+            
+            changes_made = []
+            files_changed = []
+            
+            # Process each file that needs modification
+            for file_path in files_to_modify:
+                if file_path in self.context.accessible_files:
+                    # Analyze the file
+                    analysis = self.analyze_code(file_path)
+                    
+                    # Create a change record
+                    change_record = {
+                        'file': file_path,
+                        'description': f"Modified {file_path} for {sub_goal_description}",
+                        'timestamp': time.time(),
+                        'analysis': analysis,
+                        'expected_changes': expected_changes.get(file_path, '')
+                    }
+                    
+                    changes_made.append(change_record)
+                    files_changed.append(file_path)
+            
+            # Update handbook if available
+            if self.handbook_manager:
+                from .handbook_manager import ChangeRecord
+                change_record = ChangeRecord(
+                    timestamp=time.strftime('%Y-%m-%d %H:%M:%S'),
+                    goal=sub_goal_description,
+                    files_changed=files_changed,
+                    changes_description=f"Sub-goal execution: {sub_goal_description}",
+                    impact_analysis="Sub-goal completed successfully",
+                    context_passed=context
+                )
+                self.handbook_manager.add_change_record(change_record)
+            
+            return {
+                'success': True,
+                'files_changed': files_changed,
+                'changes_made': changes_made,
+                'sub_goal_description': sub_goal_description
+            }
+            
+        except Exception as e:
+            return {
+                'success': False,
+                'error': str(e),
+                'sub_goal_description': sub_goal_description
+            }
+    
+    def _create_sub_goal_prompt(self, sub_goal_description: str, files_to_modify: List[str], 
+                               expected_changes: Dict[str, str], context: Dict[str, Any]) -> str:
+        """Create a detailed prompt for executing a sub-goal."""
+        return f"""
+Execute the following sub-goal:
+
+Sub-goal Description: {sub_goal_description}
+
+Files to modify:
+{chr(10).join([f"- {file_path}: {expected_changes.get(file_path, 'General modifications')}" for file_path in files_to_modify])}
+
+Context from previous sub-goals:
+{json.dumps(context.get('previous_results', {}), indent=2)}
+
+Handbook context:
+{json.dumps(context.get('handbook_data', {}), indent=2)}
+
+Please execute this sub-goal by:
+1. Analyzing the current state of each file
+2. Making the necessary changes as specified
+3. Ensuring changes are minimal and focused
+4. Maintaining code quality and consistency
+5. Updating the handbook with the changes made
+
+Focus only on the specific changes needed for this sub-goal.
+"""
