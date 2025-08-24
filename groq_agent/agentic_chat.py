@@ -47,12 +47,12 @@ class AgenticChat:
         self.recent_changes: List[Dict[str, Any]] = []
         self.tool_calls: List[Dict[str, Any]] = []
         
-        # Context Optimization - Full 60k context utilization
+        # Context Optimization - Full 64k context utilization
         self.operation_history: List[Dict[str, Any]] = []
         self.task_context: Dict[str, Any] = {}
         self.session_state: Dict[str, Any] = {}
         self.context_buffer: List[Dict[str, Any]] = []
-        self.max_context_tokens = 60000  # Full context window
+        self.max_context_tokens = 64000  # Full context window
         self.current_context_size = 0
         self.context_optimization_enabled = True
         
@@ -610,70 +610,58 @@ class AgenticChat:
     def _process_agentic_request_with_context(self, user_input: str) -> Optional[str]:
         """Process user request using advanced agentic capabilities with full context optimization."""
         try:
-            # Build smart context using full 60k context window
+            if len(self.messages) > self.max_history:
+                self.messages = self.messages[-self.max_history:]
+
             smart_context = self._build_smart_context(user_input)
-            
-            # Optimize context for 60k token limit
-            optimized_context = self._optimize_context_for_60k(smart_context)
-            
-            # Add to operation history
+            optimized_context = self._optimize_context_for_64k(smart_context)
+
             self._add_to_operation_history({
                 'type': 'user_request',
                 'description': user_input,
                 'context_size': len(optimized_context) // 4,
                 'context_utilization': self.session_state['context_utilization']
             })
-            
-            # Check if this is a file modification request
+
             if self._is_file_modification_request(user_input):
                 return self._handle_file_modification_request(user_input)
-            
-            # Use enhanced context for AI processing
-            self.messages.append({"role": "user", "content": optimized_context})
-            
+
+            context_message = {"role": "system", "content": optimized_context}
+            user_message = {"role": "user", "content": user_input}
+            self.session_state['models_used'].add(self.current_model)
+
+            messages = self.messages + [context_message, user_message]
+
+            with Status("[bold green]🤖 Processing with 64k context optimization...", console=self.console):
+                response = self.api_client.chat_completion(
+                    messages=messages,
+                    model=self.current_model,
+                    temperature=0.7,
+                    max_tokens=30000
+                )
+
+            if not response or not response.choices or not response.choices[0].message:
+                self.console.print("[red]Error: Received empty response from API[/red]")
+                return None
+
+            response_content = response.choices[0].message.content
+            if not response_content or not response_content.strip():
+                self.console.print("[red]Error: Received empty response content from API[/red]")
+                return None
+
+            self.messages.append(user_message)
+            self.messages.append({"role": "assistant", "content": response_content})
             if len(self.messages) > self.max_history:
                 self.messages = self.messages[-self.max_history:]
-            
-            with Status("[bold green]🤖 Processing with 60k context optimization...", console=self.console):
-                try:
-                    response = self.api_client.chat_completion(
-                        messages=self.messages,
-                        model=self.current_model,
-                        temperature=0.7,
-                        max_tokens=4000
-                    )
-                    
-                    if not response or not response.choices or not response.choices[0].message:
-                        self.console.print("[red]Error: Received empty response from API[/red]")
-                        if self.messages:
-                            self.messages.pop()
-                        return None
-                    
-                    response_content = response.choices[0].message.content
-                    
-                    if not response_content or not response_content.strip():
-                        self.console.print("[red]Error: Received empty response content from API[/red]")
-                        if self.messages:
-                            self.messages.pop()
-                        return None
-                    
-                    self.messages.append({"role": "assistant", "content": response_content})
-                    
-                    # Track successful response in context
-                    self._add_to_operation_history({
-                        'type': 'ai_response',
-                        'description': f"Generated response for: {user_input[:50]}...",
-                        'response_length': len(response_content)
-                    })
-                    
-                    return response_content
-                    
-                except Exception as e:
-                    self.console.print(f"[red]Error getting response: {e}[/red]")
-                    if self.messages:
-                        self.messages.pop()
-                    return None
-                    
+
+            self._add_to_operation_history({
+                'type': 'ai_response',
+                'description': f"Generated response for: {user_input[:50]}...",
+                'response_length': len(response_content)
+            })
+
+            return response_content
+
         except Exception as e:
             return f"❌ Error processing request with context: {str(e)}"
 
@@ -722,7 +710,7 @@ Please respond intelligently to the user's request, using your tools when approp
                     messages=self.messages,
                     model=self.current_model,
                     temperature=0.7,
-                    max_tokens=4000
+                    max_tokens=30000
                 )
                 
                 if not response or not response.choices or not response.choices[0].message:
@@ -932,11 +920,25 @@ Please respond intelligently to the user's request, using your tools when approp
         self.console.print(f"[green]📋 Determined {len(file_specs)} files needed for this project[/green]")
         
         # Create files with diff preview (always show changes)
-        results = self.file_ops.create_multiple_files_from_prompt(
-            file_specs,
-            self.current_model,
-            auto_apply=False
-        )
+        results = {}
+        if hasattr(self.file_ops, "create_multiple_files_from_prompt"):
+            results = self.file_ops.create_multiple_files_from_prompt(
+                file_specs,
+                self.current_model,
+                auto_apply=False
+            )
+        else:  # Fallback for simpler file operation implementations
+            spec = file_specs[0]
+            path = spec.get("path")
+            prompt = spec.get("prompt", "")
+            file_type = spec.get("type")
+            success = self.file_ops.create_file_from_prompt(
+                path,
+                self.current_model,
+                prompt,
+                file_type,
+            )
+            results[path] = success
         
         # Track successful creations
         successful_files = []
@@ -953,8 +955,10 @@ Please respond intelligently to the user's request, using your tools when approp
         # Single confirmation for the entire task
         if successful_files:
             self._ask_for_single_task_confirmation(user_input, successful_files)
-        
-        return f"✅ Created {len(successful_files)} files successfully."
+
+        if len(successful_files) == 1:
+            return f"✅ Created new file: {successful_files[0]}"
+        return f"✅ Created {len(successful_files)} files successfully: {', '.join(successful_files)}"
 
     def _determine_required_files(self, user_input: str) -> List[Dict[str, str]]:
         """Use AI to determine what files are needed for the request."""
@@ -1004,12 +1008,12 @@ Be minimal and focused. Only create what's needed.
                 messages=[{"role": "user", "content": context}],
                 model=self.current_model,
                 temperature=0.3,
-                max_tokens=2000
+                max_tokens=30000
             )
-            
+
             if not response or not response.choices or not response.choices[0].message:
                 return self._get_default_file_specs(user_input)
-            
+
             response_content = response.choices[0].message.content
             
             # Try to parse JSON from response
@@ -1405,7 +1409,7 @@ Be minimal and focused. Only create what's needed.
   /workspace          - Show workspace information
   /status             - Show system status
   /tools              - Display available tools
-  /context            - Show 60k context optimization status
+  /context            - Show 64k context optimization status
   /history            - Show recent changes
 
 [bold cyan]Model Management:[/bold cyan]
@@ -1600,12 +1604,12 @@ Be minimal and focused. Only create what's needed.
         return f"{size_bytes:.1f} TB"
 
     # ============================================================================
-    # CONTEXT OPTIMIZATION METHODS - Full 60k Context Window Utilization
+    # CONTEXT OPTIMIZATION METHODS - Full 64k Context Window Utilization
     # ============================================================================
 
     def _initialize_context_optimization(self) -> None:
-        """Initialize context optimization for full 60k context window usage."""
-        self.console.print("[cyan]🔧 Initializing Context Optimization (60k tokens)...[/cyan]")
+        """Initialize context optimization for full 64k context window usage."""
+        self.console.print("[cyan]🔧 Initializing Context Optimization (64k tokens)...[/cyan]")
         
         # Initialize context tracking
         self.operation_history = []
@@ -1651,7 +1655,7 @@ Be minimal and focused. Only create what's needed.
         self.session_state['context_utilization'] = (self.current_context_size / self.max_context_tokens) * 100
 
     def _build_smart_context(self, user_input: str) -> str:
-        """Build smart context using full 60k context window effectively."""
+        """Build smart context using full 64k context window effectively."""
         context_parts = []
         
         # 1. CONVERSATION HISTORY (highest priority - maintain continuity)
@@ -1854,8 +1858,8 @@ Be minimal and focused. Only create what's needed.
             return "Institutes"
         return ""
 
-    def _optimize_context_for_60k(self, context: str) -> str:
-        """Optimize context to fit within 60k token limit while preserving important information."""
+    def _optimize_context_for_64k(self, context: str) -> str:
+        """Optimize context to fit within 64k token limit while preserving important information."""
         # Estimate current context size
         estimated_tokens = len(context) // 4
         
@@ -1947,7 +1951,7 @@ Be minimal and focused. Only create what's needed.
     def _get_context_summary(self) -> str:
         """Get a summary of current context for display."""
         summary = f"""
-[bold cyan]📊 Context Summary (60k Token Optimization)[/bold cyan]
+[bold cyan]📊 Context Summary (64k Token Optimization)[/bold cyan]
 
 [bold]Current Task:[/bold] {self.task_context.get('current_task', 'None')}
 [bold]Session ID:[/bold] {self.task_context.get('session_id', 'Unknown')}
