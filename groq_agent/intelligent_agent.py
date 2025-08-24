@@ -253,7 +253,7 @@ class IntelligentAgent:
                     messages=[{"role": "user", "content": prompt}],
                     model=self.current_model,
                     temperature=0.3,
-                    max_tokens=3000
+                    max_tokens=30000
                 )
                 
                 response_content = response.choices[0].message.content

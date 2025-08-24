@@ -47,12 +47,12 @@ class InteractiveChatSession:
         self.messages: List[Dict[str, str]] = []
         self.max_history = config.get_max_history()
         
-        # Context Optimization - Full 60k context utilization
+        # Context Optimization - Full 64k context utilization
         self.operation_history: List[Dict[str, Any]] = []
         self.task_context: Dict[str, Any] = {}
         self.session_state: Dict[str, Any] = {}
         self.context_buffer: List[Dict[str, Any]] = []
-        self.max_context_tokens = 60000  # Full context window
+        self.max_context_tokens = 64000  # Full context window
         self.current_context_size = 0
         self.context_optimization_enabled = True
         
@@ -306,7 +306,7 @@ The user can now ask questions about this file or request modifications to it.""
 [cyan]/model[/cyan] - Change the AI model (interactive selection)
 [cyan]/clear[/cyan] - Clear the current chat history
 [cyan]/history[/cyan] - Show recent message history
-[cyan]/context[/cyan] - Show 60k context optimization status
+[cyan]/context[/cyan] - Show 64k context optimization status
 [cyan]/file[/cyan] - File context commands (see /file for details)
 [cyan]/exit[/cyan] - Exit the chat session
 
@@ -369,36 +369,33 @@ The user can now ask questions about this file or request modifications to it.""
                 self.console.print(f"[green]{i}. Assistant:[/green] {content}")
     
     def _send_message_with_context(self, user_input: str) -> Optional[str]:
-        """Send message to API with full 60k context optimization.
-        
+        """Send message to API with full 64k context optimization.
+
         Args:
             user_input: User's message
-            
+
         Returns:
             API response or None if error
         """
         try:
-            # Build smart context using full 60k context window
+            if len(self.messages) > self.max_history * 2:
+                self.messages = self.messages[-self.max_history * 2:]
+
             smart_context = self._build_smart_context(user_input)
-            
-            # Optimize context for 60k token limit
-            optimized_context = self._optimize_context_for_60k(smart_context)
-            
-            # Add to operation history
+            optimized_context = self._optimize_context_for_64k(smart_context)
+
             self._add_to_operation_history({
                 'type': 'user_request',
                 'description': user_input,
                 'context_size': len(optimized_context) // 4,
                 'context_utilization': self.session_state['context_utilization']
             })
-            
-            # Add user message to history with optimized context
-            self.messages.append({"role": "user", "content": optimized_context})
-            
-            # Track model usage
+
+            context_message = {"role": "system", "content": optimized_context}
+            user_message = {"role": "user", "content": user_input}
             self.session_state['models_used'].add(self.current_model)
-            
-            # Add file context if available
+
+            messages = self.messages + [context_message]
             if hasattr(self, 'current_file') and self.current_file:
                 file_context = f"""
 Current file context:
@@ -408,58 +405,40 @@ Content:
 
 User message: {user_input}
 
-Please consider the file content when responding to the user's message.
-"""
-                # Replace the last user message with context-enhanced version
-                self.messages[-1] = {"role": "user", "content": file_context}
-            
-            # Trim history if needed
-            if len(self.messages) > self.max_history * 2:  # *2 because each exchange is 2 messages
+Please consider the file content when responding to the user's message."""
+                messages.append({"role": "system", "content": file_context})
+            messages.append(user_message)
+
+            with Live(Spinner("dots", text="🤖 Processing with 64k context optimization..."), console=self.console):
+                response = self.api_client.chat_completion(
+                    messages=messages,
+                    model=self.current_model,
+                    temperature=0.7,
+                    max_tokens=30000
+                )
+
+            if not response or not response.choices or not response.choices[0].message:
+                self.console.print("[red]Error: Received empty response from API[/red]")
+                return None
+
+            response_content = response.choices[0].message.content
+            if not response_content or not response_content.strip():
+                self.console.print("[red]Error: Received empty response content from API[/red]")
+                return None
+
+            self.messages.append(user_message)
+            self.messages.append({"role": "assistant", "content": response_content})
+            if len(self.messages) > self.max_history * 2:
                 self.messages = self.messages[-self.max_history * 2:]
-            
-            # Show typing indicator with context optimization
-            with Live(Spinner("dots", text="🤖 Processing with 60k context optimization..."), console=self.console):
-                try:
-                    response = self.api_client.chat_completion(
-                        messages=self.messages,
-                        model=self.current_model,
-                        temperature=0.7,
-                        max_tokens=4000
-                    )
-                    
-                    if not response or not response.choices or not response.choices[0].message:
-                        self.console.print("[red]Error: Received empty response from API[/red]")
-                        if self.messages:
-                            self.messages.pop()
-                        return None
-                    
-                    response_content = response.choices[0].message.content
-                    
-                    if not response_content or not response_content.strip():
-                        self.console.print("[red]Error: Received empty response content from API[/red]")
-                        if self.messages:
-                            self.messages.pop()
-                        return None
-                    
-                    # Add assistant response to history
-                    self.messages.append({"role": "assistant", "content": response_content})
-                    
-                    # Track successful response in context
-                    self._add_to_operation_history({
-                        'type': 'ai_response',
-                        'description': f"Generated response for: {user_input[:50]}...",
-                        'response_length': len(response_content)
-                    })
-                    
-                    return response_content
-                    
-                except Exception as e:
-                    self.console.print(f"[red]Error getting response: {e}[/red]")
-                    # Remove the user message from history since it failed
-                    if self.messages:
-                        self.messages.pop()
-                    return None
-                    
+
+            self._add_to_operation_history({
+                'type': 'ai_response',
+                'description': f"Generated response for: {user_input[:50]}...",
+                'response_length': len(response_content)
+            })
+
+            return response_content
+
         except Exception as e:
             return f"❌ Error processing request with context: {str(e)}"
 
@@ -616,12 +595,12 @@ Please consider the file content when responding to the user's message.
             self.messages = self.messages[-self.max_history * 2:]
 
     # ============================================================================
-    # CONTEXT OPTIMIZATION METHODS - Full 60k Context Window Utilization
+    # CONTEXT OPTIMIZATION METHODS - Full 64k Context Window Utilization
     # ============================================================================
 
     def _initialize_context_optimization(self) -> None:
-        """Initialize context optimization for full 60k context window usage."""
-        self.console.print("[cyan]🔧 Initializing Context Optimization (60k tokens)...[/cyan]")
+        """Initialize context optimization for full 64k context window usage."""
+        self.console.print("[cyan]🔧 Initializing Context Optimization (64k tokens)...[/cyan]")
         
         # Initialize context tracking
         self.operation_history = []
@@ -667,7 +646,7 @@ Please consider the file content when responding to the user's message.
         self.session_state['context_utilization'] = (self.current_context_size / self.max_context_tokens) * 100
 
     def _build_smart_context(self, user_input: str) -> str:
-        """Build smart context using full 60k context window effectively."""
+        """Build smart context using full 64k context window effectively."""
         context_parts = []
         
         # 1. CONVERSATION HISTORY (highest priority - maintain continuity)
@@ -865,8 +844,8 @@ Please consider the file content when responding to the user's message.
             return "Institutes"
         return ""
 
-    def _optimize_context_for_60k(self, context: str) -> str:
-        """Optimize context to fit within 60k token limit while preserving important information."""
+    def _optimize_context_for_64k(self, context: str) -> str:
+        """Optimize context to fit within 64k token limit while preserving important information."""
         # Estimate current context size
         estimated_tokens = len(context) // 4
         
@@ -958,7 +937,7 @@ Please consider the file content when responding to the user's message.
     def _get_context_summary(self) -> str:
         """Get a summary of current context for display."""
         summary = f"""
-[bold cyan]📊 Context Summary (60k Token Optimization)[/bold cyan]
+[bold cyan]📊 Context Summary (64k Token Optimization)[/bold cyan]
 
 [bold]Current Task:[/bold] {self.task_context.get('current_task', 'None')}
 [bold]Session ID:[/bold] {self.task_context.get('session_id', 'Unknown')}

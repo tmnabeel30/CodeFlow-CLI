@@ -73,7 +73,7 @@ class FileOperations:
                 messages=[{"role": "user", "content": analysis_prompt}],
                 model=model,
                 temperature=0.3,
-                max_tokens=2000
+                max_tokens=30000
             )
             
             analysis_content = analysis_result.choices[0].message.content

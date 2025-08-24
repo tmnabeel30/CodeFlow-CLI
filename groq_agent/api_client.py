@@ -125,7 +125,7 @@ class GroqAPIClient:
         messages: List[Dict[str, str]],
         model: str,
         temperature: float = 0.7,
-        max_tokens: Optional[int] = None,
+        max_tokens: Optional[int] = 30000,
         stream: bool = False
     ) -> Any:
         """Send chat completion request to Groq API.
@@ -134,7 +134,7 @@ class GroqAPIClient:
             messages: List of message dictionaries with 'role' and 'content'
             model: Model to use for completion
             temperature: Sampling temperature (0.0 to 2.0)
-            max_tokens: Maximum tokens to generate
+            max_tokens: Maximum tokens to generate (default 30000)
             stream: Whether to stream the response
             
         Returns:
@@ -196,7 +196,7 @@ class GroqAPIClient:
                 messages=messages,
                 model=model,
                 temperature=temperature,
-                max_tokens=4000
+                max_tokens=30000
             )
             content = response.choices[0].message.content
             
