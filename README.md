@@ -1,6 +1,14 @@
+
+https://github.com/user-attachments/assets/7eea7aab-147f-4e79-a3dc-0a72db44181f
 # CodeFlow CLI
 
 A powerful, terminal-first AI coding assistant with **advanced agentic capabilities**. CodeFlow helps you read, explore, analyze, and improve your codebase with an enhanced chat UI, intelligent tools, and safe, confirmed edits.
+
+
+https://github.com/user-attachments/assets/55cf24aa-082c-459d-876a-d41bababb7fe
+
+
+
 
 ## 🚀 Why CodeFlow?
 
@@ -8,7 +16,10 @@ A powerful, terminal-first AI coding assistant with **advanced agentic capabilit
 - **Stunning terminal UI** with rich colors, syntax-highlighting, and interactive panels
 - **Three powerful modes** that fit any workflow:
   - **Q&A Mode** (read-only): Ask questions about the codebase without making changes
-  - **Agent Mode** (write): Propose and apply changes with diff previews and confirmation  
+  - **Agent Mode** (write): Propose and apply changes with diff previews and confirmati
+
+
+on  
   - **Advanced Agent** (enhanced): Smart tools, semantic search, code analysis, and intelligent automation
 - **Smart codebase understanding**: Automatic project structure analysis and context awareness
 - **Semantic search capabilities**: Find code by meaning, not just text matching
