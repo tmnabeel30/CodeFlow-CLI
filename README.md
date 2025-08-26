@@ -1,5 +1,4 @@
 
-https://github.com/user-attachments/assets/7eea7aab-147f-4e79-a3dc-0a72db44181f
 # CodeFlow CLI
 
 A powerful, terminal-first AI coding assistant with **advanced agentic capabilities**. CodeFlow helps you read, explore, analyze, and improve your codebase with an enhanced chat UI, intelligent tools, and safe, confirmed edits.
